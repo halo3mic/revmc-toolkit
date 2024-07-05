@@ -1,0 +1,29 @@
+[package]
+name = "builder-revmc"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.79"
+
+[dependencies]
+reth-db.workspace = true
+reth-provider.workspace = true
+reth-chainspec.workspace = true
+reth-revm.workspace = true
+reth-primitives.workspace = true
+reth-rpc-types.workspace = true
+revmc.workspace = true
+revmc-builtins.workspace = true
+revmc-context.workspace = true
+revmc-build.workspace = true
+revm-interpreter.workspace = true
+revm.workspace = true
+dotenv.workspace = true
+eyre.workspace = true
+cc.workspace = true
+libloading.workspace = true
+hex.workspace = true
+
+[build-dependencies]
+revmc.workspace = true
+revmc-build.workspace = true
+cc = "1.0"

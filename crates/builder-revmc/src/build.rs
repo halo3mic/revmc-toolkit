@@ -104,15 +104,6 @@ pub fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -
         eprintln!("Linked shared object file to {}", so.display());
     }
 
-    // Alternative used in example
-    // cc::Build::new()
-    //     .object(&obj)
-    //     .static_flag(true)
-    //     .host("x86_64-unknown-linux-gnu")
-    //     .target(&opt.target)
-    //     .out_dir(&out_dir)
-    //     .compile(&label);
-
     Ok(())
 
 }

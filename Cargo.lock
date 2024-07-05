@@ -780,12 +780,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "builder_revmc"
+name = "builder-revmc"
 version = "0.1.0"
 dependencies = [
  "cc",
  "dotenv",
  "eyre",
+ "hex",
  "libloading",
  "reth-chainspec",
  "reth-db",
