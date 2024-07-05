@@ -22,8 +22,7 @@ eyre.workspace = true
 cc.workspace = true
 libloading.workspace = true
 hex.workspace = true
+rayon = "1.10.0"
 
 [build-dependencies]
-revmc.workspace = true
 revmc-build.workspace = true
-cc = "1.0"

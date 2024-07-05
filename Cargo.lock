@@ -788,6 +788,7 @@ dependencies = [
  "eyre",
  "hex",
  "libloading",
+ "rayon",
  "reth-chainspec",
  "reth-db",
  "reth-primitives",
