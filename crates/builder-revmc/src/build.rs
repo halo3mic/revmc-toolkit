@@ -2,9 +2,11 @@ use revmc::{EvmLlvmBackend, EvmCompiler, OptimizationLevel};
 use reth_primitives::Bytecode;
 use revm::primitives::SpecId;
 
-use std::path::PathBuf;
-use eyre::{Result, ensure};
+use std::path::{Path, PathBuf};
+use eyre::{ensure, Ok, Result};
 
+
+const DATA_DIR: &str = ".data";
 
 pub struct CompilerOptions {
     out_dir: Option<PathBuf>,
@@ -68,7 +70,7 @@ pub fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -
 
     compiler.set_module_name(label);
 
-
+    
     compiler.inspect_stack_length(true);
     // if !stack_input.is_empty() {
     //     compiler.inspect_stack_length(true);
@@ -82,6 +84,7 @@ pub fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -
         } else {
             let dir = std::env::current_dir()
                 .expect("Failed to get current directory")
+                .join(DATA_DIR)
                 .join(label);
             std::fs::create_dir_all(&dir)?;
             dir
@@ -89,6 +92,7 @@ pub fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -
 
     // Compile.
     let obj = out_dir.join(label).with_extension("o");
+    println!("Writing object file to {}", obj.display());
     compiler.write_object_to_file(&obj)?;
 
     if !obj.exists() {
@@ -108,11 +112,31 @@ pub fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -
 
 }
 
-// todo: could this going out of scope be the issue?
-pub fn load(label: &str) -> Result<revmc::EvmCompilerFn> {
-    let path = std::env::current_dir()?.join(label).join("a.so");
+// pub fn compile2(label: &str, bytecode: &Bytecode) -> Result<()>  {
+//     revmc_build::emit();
+
+//     let out_dir = PathBuf::from(std::env::current_dir()?.join(DATA_DIR).join(label));
+//     if !out_dir.exists() {
+//         std::fs::create_dir_all(&out_dir)?;
+//     } 
+//     let context = revmc::llvm::inkwell::context::Context::create();
+//     let backend = EvmLlvmBackend::new(&context, true, OptimizationLevel::Aggressive)?;
+//     let mut compiler = EvmCompiler::new(backend);
+//     compiler.translate(Some(label), bytecode.bytecode(), SpecId::CANCUN)?;
+//     let object = out_dir.join(label).with_extension("o");
+//     compiler.write_object_to_file(&object)?;
+
+//     cc::Build::new().object(&object).static_flag(true).compile(label);
+
+//     Ok(())
+// }
+
+// todo: define path
+pub fn load(label: &str) -> Result<(revmc::EvmCompilerFn, libloading::Library)> {
+    let path = std::env::current_dir()?.join(DATA_DIR).join(label).join("a.so");
+    println!("Loading {label} at path {}", path.display());
     let lib = unsafe { libloading::Library::new(path) }?;
     let f: libloading::Symbol<'_, revmc::EvmCompilerFn> =
         unsafe { lib.get(label.as_bytes())? };
-    Ok(*f)
+    Ok((*f, lib))
 }

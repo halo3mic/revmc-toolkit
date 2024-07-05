@@ -1,23 +1,18 @@
-use reth_db::open_db_read_only;
-use reth_provider::{ProviderFactory, providers::StaticFileProvider, StateProvider};
+use reth_provider::StateProvider;
 use reth_revm::{database::StateProviderDatabase, DatabaseRef};
-use reth_primitives::{PooledTransactionsElement, Address, Bytecode, transaction::FillTxEnv};
-use reth_rpc_types::{EthCallBundle, EthCallBundleResponse, EthCallBundleTransactionResult};
-use reth_chainspec::ChainSpecBuilder;
+use reth_primitives::{PooledTransactionsElement, Address, transaction::FillTxEnv};
+use reth_rpc_types::{EthCallBundleResponse, EthCallBundleTransactionResult};
 use revm::{
     db::CacheDB, primitives::{
-        address, TransactTo, BlockEnv, Bytes, CfgEnvWithHandlerCfg, EnvKzgSettings, EnvWithHandlerCfg, FixedBytes, ResultAndState, SpecId, TxEnv, U256, Env, Bytecode as RevmBytecode
-    }, DatabaseCommit, Evm, State
+        BlockEnv, CfgEnvWithHandlerCfg, EnvKzgSettings, EnvWithHandlerCfg, FixedBytes, ResultAndState, TxEnv, U256,
+    }, DatabaseCommit,
 };
-use revmc::{EvmLlvmBackend, EvmCompiler, OptimizationLevel, EvmContext};
-use revmc_build;
 
-use std::{path::{Path, PathBuf}, str::FromStr};
-use eyre::{OptionExt, Result, ensure};
+use eyre::{OptionExt, Result};
 
 
 // modified code from reth's EthBundle::call_bundle
-fn sim_txs(
+pub fn sim_txs(
     transactions: Vec<(PooledTransactionsElement, Address)>,
     cfg: CfgEnvWithHandlerCfg, 
     block_env: BlockEnv, 

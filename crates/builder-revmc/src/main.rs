@@ -12,7 +12,7 @@ use reth_revm::database::StateProviderDatabase;
 use revm::{Evm, Database, handler::register::EvmHandler};
 use reth_primitives::{Address, Bytecode as RethBytecode, B256};
 use reth_chainspec::ChainSpecBuilder;
-use revm::primitives::{address, TransactTo, Bytes, U256, Env, Bytecode};
+use revm::primitives::{address, TransactTo, Bytes, U256, Env, Bytecode, spec_to_generic, SpecId};
 use revmc::EvmContext;
 
 use std::collections::HashMap;
@@ -59,7 +59,7 @@ fn run_a(label: &str, env: Env, code: RethBytecode) -> Result<()> {
     let mut host = revm_interpreter::DummyHost::new(env);
 
 
-    let f = build::load(&label)?;
+    let (f, _lib) = build::load(&label)?;
     println!("loaded 🚀");
     let gas_limit = 100_000;
     let stack_input: Vec<U256> = vec![];
@@ -98,7 +98,7 @@ fn run_b(label: &str, env: Env, state_provider: impl StateProvider + 'static) ->
 }
 
 fn run_c(label: &str, env: Env, code: RethBytecode, state_provider: impl StateProvider + 'static) -> Result<()> {
-    let external_fun = build::load(&label)?;
+    let (external_fun, _lib)  = build::load(&label)?;
     let external_ctx = ExternalContext::default()
         .add(code.hash_slow(), external_fun);
     let spdb = StateProviderDatabase::new(state_provider);
