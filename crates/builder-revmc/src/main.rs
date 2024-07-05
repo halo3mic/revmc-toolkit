@@ -9,12 +9,14 @@ use reth_provider::{
     StateProvider,
 };
 use reth_revm::database::StateProviderDatabase;
-use revm::{Evm, Database};
-use reth_primitives::{Address, Bytecode as RethBytecode, keccak256};
+use revm::{Evm, Database, handler::register::EvmHandler};
+use reth_primitives::{Address, Bytecode as RethBytecode, B256};
 use reth_chainspec::ChainSpecBuilder;
 use revm::primitives::{address, TransactTo, Bytes, U256, Env, Bytecode};
 use revmc::EvmContext;
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::{path::Path, str::FromStr};
 use eyre::{OptionExt, Result};
 
@@ -42,7 +44,8 @@ fn main() -> Result<()> {
     env.tx.gas_limit = 100_000;
 
     // run_a(label, env, code)?;
-    run_b(label, env, state_provider)?;
+    // run_b(label, env, state_provider)?;
+    run_c(label, env, code, state_provider)?;
 
     Ok(())
 }
@@ -84,14 +87,62 @@ fn run_a(label: &str, env: Env, code: RethBytecode) -> Result<()> {
 }
 
 fn run_b(label: &str, env: Env, state_provider: impl StateProvider + 'static) -> Result<()> {
-    let spd = StateProviderDatabase::new(state_provider);
-    let mut evm = utils::build_evm(spd);
+    let spdb = StateProviderDatabase::new(state_provider);
+    let mut evm = utils::build_evm(spdb);
     evm.context.evm.env = Box::new(env);
 
     let result = evm.transact()?;
     eprintln!("{:#?}", result.result);
 
     Ok(())
+}
+
+fn run_c(label: &str, env: Env, code: RethBytecode, state_provider: impl StateProvider + 'static) -> Result<()> {
+    let external_fun = build::load(&label)?;
+    let external_ctx = ExternalContext::default()
+        .add(code.hash_slow(), external_fun);
+    let spdb = StateProviderDatabase::new(state_provider);
+
+    let mut evm = revm::Evm::builder()
+        .with_db(spdb)
+        .with_external_context(external_ctx)
+        .append_handler_register(register_handler)
+        .build();
+    evm.context.evm.env = Box::new(env);
+
+    let result = evm.transact()?;
+    eprintln!("{:#?}", result.result);
+
+    Ok(())
+}
+
+#[derive(Default)]
+pub struct ExternalContext(HashMap<B256, revmc::EvmCompilerFn>);
+
+impl ExternalContext {
+    fn add(self, code_hash: B256, fnc: revmc::EvmCompilerFn) -> Self {
+        let mut map = self.0;
+        map.insert(code_hash, fnc);
+        Self(map)
+    }
+
+    fn get_function(&self, bytecode_hash: B256) -> Option<revmc::EvmCompilerFn> {
+        self.0.get(&bytecode_hash).map(|f| *f)
+    }
+}
+
+// This `+ 'static` bound is only necessary here because of an internal cfg feature.
+fn register_handler<DB: Database + 'static>(handler: &mut EvmHandler<'_, ExternalContext, DB>) {
+    let prev = handler.execution.execute_frame.clone();
+    handler.execution.execute_frame = Arc::new(move |frame, memory, tables, context| {
+        let interpreter = frame.interpreter_mut();
+        let bytecode_hash = interpreter.contract.hash.unwrap_or_default();
+        if let Some(f) = context.external.get_function(bytecode_hash) {
+            Ok(unsafe { f.call_with_interpreter_and_memory(interpreter, memory, context) })
+        } else {
+            prev(frame, memory, tables, context)
+        }
+    });
 }
 
 fn make_state_provider(db_path: &str) -> Result<impl StateProvider> {
