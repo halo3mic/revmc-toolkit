@@ -1,4 +1,4 @@
-use revmc_sim_build::{self, CompilerOptions, CodeWithOptions};
+use revmc_sim_build::{CompilerOptions, CodeWithOptions};
 use reth_db::{open_db_read_only, DatabaseEnv};
 use reth_provider::{
     providers::StaticFileProvider,

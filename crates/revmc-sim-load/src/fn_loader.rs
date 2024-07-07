@@ -1,6 +1,6 @@
-use libloading::Library;
+use revm::primitives::B256;
 use revmc::EvmCompilerFn;
-use reth_primitives::B256;
+use libloading::Library;
 
 use std::{str::FromStr, path::PathBuf};
 use eyre::{OptionExt, Result};

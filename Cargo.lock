@@ -3384,33 +3384,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-sim"
-version = "0.1.0"
-dependencies = [
- "cc",
- "dotenv",
- "eyre",
- "hex",
- "libloading",
- "rayon",
- "reth-chainspec",
- "reth-db",
- "reth-evm",
- "reth-evm-ethereum",
- "reth-primitives",
- "reth-provider",
- "reth-revm",
- "reth-rpc-types",
- "revm",
- "revm-interpreter",
- "revmc",
- "revmc-build",
- "revmc-builtins",
- "revmc-context",
- "revmc-sim-build",
-]
-
-[[package]]
 name = "revmc-sim-build"
 version = "0.1.0"
 dependencies = [
@@ -3419,7 +3392,6 @@ dependencies = [
  "rayon",
  "revm",
  "revmc",
- "revmc-build",
  "serde",
  "serde_json",
 ]
@@ -3448,6 +3420,18 @@ dependencies = [
  "revmc-build",
  "revmc-builtins",
  "revmc-context",
+ "revmc-sim-build",
+ "revmc-sim-load",
+]
+
+[[package]]
+name = "revmc-sim-load"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "libloading",
+ "revm",
+ "revmc",
 ]
 
 [[package]]
