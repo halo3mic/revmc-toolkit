@@ -1,34 +1,26 @@
 use reth_provider::StateProvider;
 use reth_revm::{database::StateProviderDatabase, DatabaseRef};
-use reth_primitives::{PooledTransactionsElement, Address, transaction::FillTxEnv};
+use reth_primitives::{transaction::FillTxEnv, Address, PooledTransactionsElement, TransactionSigned};
 use reth_rpc_types::{EthCallBundleResponse, EthCallBundleTransactionResult};
 use revm::{
-    db::CacheDB, primitives::{
+    db::CacheDB, Evm, Database, primitives::{
         BlockEnv, CfgEnvWithHandlerCfg, EnvKzgSettings, EnvWithHandlerCfg, FixedBytes, ResultAndState, TxEnv, U256,
     }, DatabaseCommit,
 };
 
 use eyre::{OptionExt, Result};
 
-// pub fn sim_tx(
-//     tx: 
-// ) -> Result<()> {
-
-// }
-
 // modified code from reth's EthBundle::call_bundle
-pub fn sim_txs(
-    transactions: Vec<(PooledTransactionsElement, Address)>,
-    cfg: CfgEnvWithHandlerCfg, 
-    block_env: BlockEnv, 
-    state: Box<dyn StateProvider>,
-) -> Result<EthCallBundleResponse> {
-    let coinbase = block_env.coinbase;
-    let basefee = Some(block_env.basefee.to::<u64>());
-    let env = EnvWithHandlerCfg::new_with_cfg_env(cfg, block_env, TxEnv::default());
-    let db = CacheDB::new(StateProviderDatabase::new(state));
-
-    let initial_coinbase = DatabaseRef::basic_ref(&db, coinbase)?
+pub fn sim_txs<EXT, ExtDB: DatabaseRef>(
+    transactions: Vec<TransactionSigned>,
+    mut evm: Evm<'static, EXT, CacheDB<ExtDB>>,
+) -> Result<EthCallBundleResponse> 
+where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
+{
+    let coinbase = evm.block().coinbase;
+    let basefee = Some(evm.block().basefee.to::<u64>());
+    
+    let initial_coinbase = DatabaseRef::basic_ref(&evm.db(), coinbase)?
         .map(|acc| acc.balance)
         .unwrap_or_default();
     let mut coinbase_balance_before_tx = initial_coinbase;
@@ -37,20 +29,20 @@ pub fn sim_txs(
     let mut total_gas_fess = U256::ZERO;
     let mut hash_bytes = Vec::with_capacity(32 * transactions.len());
 
-    let mut evm =
-        revm::Evm::builder().with_db(db).with_env_with_handler_cfg(env).build();
-
     let mut results = Vec::with_capacity(transactions.len());
     let mut transactions = transactions.into_iter().peekable();
 
-    while let Some((tx, signer)) = transactions.next() {
-        // Verify that the given blob data, commitments, and proofs are all valid for
-        // this transaction.
-        if let PooledTransactionsElement::BlobTransaction(ref tx) = tx {
-            tx.validate(EnvKzgSettings::Default.get())?
-        }
+    while let Some(tx) = transactions.next() {
+        let tx = tx.try_into_ecrecovered().unwrap();
+        let signer = tx.signer();
 
-        let tx = tx.into_ecrecovered_transaction(signer);
+        // todo: add validation
+        // // Verify that the given blob data, commitments, and proofs are all valid for
+        // // this transaction.
+        // if let PooledTransactionsElement::BlobTransaction(ref tx) = tx {
+        //     tx.validate(EnvKzgSettings::Default.get())?
+        // }
+        // let tx = tx.into_ecrecovered_transaction(signer);
 
         hash_bytes.extend_from_slice(tx.hash().as_slice());
         let gas_price = tx

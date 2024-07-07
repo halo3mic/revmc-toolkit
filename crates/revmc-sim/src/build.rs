@@ -12,6 +12,8 @@ use eyre::{ensure, Ok, Result};
 use std::path::PathBuf;
 use rayon::prelude::*;
 
+// todo: it would make sense to store also code hashes
+// todo: offer option to load all contracts from a dir
 
 const DEFAULT_DATA_DIR: &str = ".data";
 

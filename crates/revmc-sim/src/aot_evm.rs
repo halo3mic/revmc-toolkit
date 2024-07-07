@@ -1,17 +1,48 @@
 use revm::{
     primitives::FixedBytes,
     handler::register::EvmHandler,
-    Database, 
+    EvmBuilder,
+    Database,
     Evm, 
 };
 use reth_primitives::B256;
 use libloading::Library;
+use reth_provider::StateProvider;
+use reth_revm::database::StateProviderDatabase;
+use revm::{
+    db::CacheDB
+};
+
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 use eyre::Result;
+use std::path::Path;
 
 use crate::build;
+
+
+struct EvmCompilerFnStore {
+    dir_path: String
+}
+
+impl EvmCompilerFnStore {
+    fn new(dir_path: String) -> Self {
+        Self { dir_path }
+    }
+
+    // load all
+    // load single(label)
+    // load config
+
+    fn load(&self, label: &str) -> Result<(revmc::EvmCompilerFn, Library)> {
+        let fnc = build::load(label)?;
+        Ok(fnc)
+    }
+}
+
+
 
 
 pub struct SourceCode {
@@ -31,17 +62,30 @@ pub fn create_evm<E>(
 ) -> Result<Evm<'static, ExternalContext, impl Database<Error=E>>> 
 where E: std::fmt::Debug + 'static
 {
-    let mut external_ctx = ExternalContext::default();
-    for src_code in src_codes {
-        let fnc  = build::load(&src_code.label)?;
-        external_ctx.add(src_code.codehash, fnc);
-    }
+    let external_ctx = build_ext_ctx(src_codes)?;
     let evm = revm::Evm::builder()
         .with_db(db)
         .with_external_context(external_ctx)
         .append_handler_register(register_handler)
         .build();
     Ok(evm)
+}
+
+// fn build_partial_evm<DB: Database>(src_codes: Vec<SourceCode>) -> Result<EvmBuilder<'static, _, ExternalContext, DB>> {
+//     let external_ctx = build_ext_ctx(src_codes)?;
+//     let evm_builder = revm::Evm::builder()
+//         .with_external_context(external_ctx)
+//         .append_handler_register(register_handler);
+//     Ok(evm_builder)
+// }
+
+pub fn build_ext_ctx(src_codes: Vec<SourceCode>) -> Result<ExternalContext> {
+    let mut external_ctx = ExternalContext::default();
+    for src_code in src_codes {
+        let fnc  = build::load(&src_code.label)?; // todo: does it make sense to define load fn here
+        external_ctx.add(src_code.codehash, fnc);
+    }
+    Ok(external_ctx)
 }
 
 #[derive(Default)]
@@ -58,7 +102,7 @@ impl ExternalContext {
 }
 
 // This `+ 'static` bound is only necessary here because of an internal cfg feature.
-fn register_handler<DB: Database + 'static>(handler: &mut EvmHandler<'_, ExternalContext, DB>) {
+pub fn register_handler<DB: Database + 'static>(handler: &mut EvmHandler<'_, ExternalContext, DB>) {
     let prev = handler.execution.execute_frame.clone();
     handler.execution.execute_frame = Arc::new(move |frame, memory, tables, context| {
         let interpreter = frame.interpreter_mut();

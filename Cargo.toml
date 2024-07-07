@@ -12,6 +12,8 @@ reth-chainspec = { git = "https://github.com/paradigmxyz/reth" }
 reth-revm = { git = "https://github.com/paradigmxyz/reth" } 
 reth-primitives = { git = "https://github.com/paradigmxyz/reth", features = ["c-kzg"] } 
 reth-rpc-types = { git = "https://github.com/paradigmxyz/reth" }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth" }
+reth-evm = { git = "https://github.com/paradigmxyz/reth" }
 revmc = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-builtins = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-context = { git = "https://github.com/paradigmxyz/revmc" }

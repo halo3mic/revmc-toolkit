@@ -15,9 +15,9 @@ use eyre::{OptionExt, Result};
 
 
 pub struct CompileArgsWithAddress {
-    address: Address,
-    label: String,
-    options: Option<CompilerOptions>,
+    pub address: Address,
+    pub label: String,
+    pub options: Option<CompilerOptions>,
 }
 
 impl CompileArgsWithAddress {
@@ -33,7 +33,7 @@ impl CompileArgsWithAddress {
     }
 }
 
-fn compile_contracts_with_address(
+pub fn compile_contracts_with_address(
     state_provider: Arc<impl StateProvider>,
     contracts: impl IntoIterator<Item=CompileArgsWithAddress>
 ) -> Result<Vec<Result<()>>> {
