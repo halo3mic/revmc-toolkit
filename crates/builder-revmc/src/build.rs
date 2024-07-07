@@ -1,14 +1,35 @@
-use revmc::{EvmLlvmBackend, EvmCompiler, OptimizationLevel};
-use revmc::llvm::inkwell::context::Context;
+use revmc::{
+    llvm::inkwell::context::Context,
+    OptimizationLevel,
+    EvmLlvmBackend, 
+    EvmCompiler, 
+};
 use reth_primitives::Bytecode;
 use revm::primitives::SpecId;
 use libloading::Library;
 
-use std::path::PathBuf;
 use eyre::{ensure, Ok, Result};
+use std::path::PathBuf;
+use rayon::prelude::*;
 
 
 const DEFAULT_DATA_DIR: &str = ".data";
+
+pub struct CompileArgs {
+    pub label: String,
+    pub code: Bytecode,
+    pub options: Option<CompilerOptions>,
+}
+
+pub fn compile_contracts(args: Vec<CompileArgs>) -> Vec<Result<()>> {
+    args.into_par_iter()
+        .map(|arg| compile_contract(arg))
+        .collect()
+}
+
+pub fn compile_contract(arg: CompileArgs) -> Result<()> {
+    compile(&arg.label, &arg.code, arg.options)
+}
 
 /**
  * Performance considerations:
@@ -57,7 +78,7 @@ impl Default for CompilerOptions {
     }
 }
 
-pub fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -> Result<()> {
+fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -> Result<()> {
     let opt = opt.unwrap_or_default();
     let ctx = Context::create();
     let mut compiler = create_compiler(label, &ctx, &opt)?;

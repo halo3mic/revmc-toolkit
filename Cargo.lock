@@ -780,30 +780,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "builder-revmc"
-version = "0.1.0"
-dependencies = [
- "cc",
- "dotenv",
- "eyre",
- "hex",
- "libloading",
- "rayon",
- "reth-chainspec",
- "reth-db",
- "reth-primitives",
- "reth-provider",
- "reth-revm",
- "reth-rpc-types",
- "revm",
- "revm-interpreter",
- "revmc",
- "revmc-build",
- "revmc-builtins",
- "revmc-context",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3808,6 +3784,30 @@ dependencies = [
  "revmc-backend",
  "rustc-hash 2.0.0",
  "tracing",
+]
+
+[[package]]
+name = "revmc-sim"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "dotenv",
+ "eyre",
+ "hex",
+ "libloading",
+ "rayon",
+ "reth-chainspec",
+ "reth-db",
+ "reth-primitives",
+ "reth-provider",
+ "reth-revm",
+ "reth-rpc-types",
+ "revm",
+ "revm-interpreter",
+ "revmc",
+ "revmc-build",
+ "revmc-builtins",
+ "revmc-context",
 ]
 
 [[package]]

@@ -10,13 +10,18 @@ use revm::{
 
 use eyre::{OptionExt, Result};
 
+// pub fn sim_tx(
+//     tx: 
+// ) -> Result<()> {
+
+// }
 
 // modified code from reth's EthBundle::call_bundle
 pub fn sim_txs(
     transactions: Vec<(PooledTransactionsElement, Address)>,
     cfg: CfgEnvWithHandlerCfg, 
     block_env: BlockEnv, 
-    state: Box<dyn StateProvider>
+    state: Box<dyn StateProvider>,
 ) -> Result<EthCallBundleResponse> {
     let coinbase = block_env.coinbase;
     let basefee = Some(block_env.basefee.to::<u64>());
