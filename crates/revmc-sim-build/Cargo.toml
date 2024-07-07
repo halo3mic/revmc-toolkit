@@ -1,13 +1,10 @@
 [package]
-name = "revmc-sim"
+name = "revmc-sim-build"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.79"
 
-# todo: rm not needed
 [dependencies]
-revmc-sim-build.workspace = true
-
 reth-db.workspace = true
 reth-provider.workspace = true
 reth-chainspec.workspace = true

@@ -2,12 +2,11 @@
 
 
 mod aot_evm;
-mod build;
 mod utils;
 mod sim;
 mod fn_loader;
 
-use build::CompilerOptions;
+use revmc_sim_build::CompilerOptions;
 use reth_revm::database::StateProviderDatabase;
 use revm::primitives::{address, Bytes, FixedBytes, TransactTo};
 

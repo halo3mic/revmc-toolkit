@@ -1,4 +1,4 @@
-use super::build::{self, CompilerOptions, CodeWithOptions};
+use revmc_sim_build::{self, CompilerOptions, CodeWithOptions};
 use reth_db::{open_db_read_only, DatabaseEnv};
 use reth_provider::{
     providers::StaticFileProvider,
@@ -47,7 +47,7 @@ pub fn compile_contracts_with_address(
     let contracts = contracts.into_iter()
         .map(|c| c.into_code_with_opt(&state_provider))
         .collect::<Result<Vec<_>>>()?;
-    let results = build::compile_contracts(contracts, fallback_opt);
+    let results = revmc_sim_build::compile_contracts(contracts, fallback_opt);
     Ok(results)
 }
 

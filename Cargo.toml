@@ -1,10 +1,11 @@
 [workspace]
 members = ["crates/*"]
-default-members = ["crates/revmc-sim"]
+default-members = ["crates/revmc-sim", "crates/revmc-sim-build"]
 resolver = "2"
 
 [workspace.dependencies]
 revmc-sim = { path = "crates/revmc-sim" }
+revmc-sim-build = { path = "crates/revmc-sim-build" }
 
 reth-db = { git = "https://github.com/paradigmxyz/reth" } 
 reth-provider = { git = "https://github.com/paradigmxyz/reth" } 
