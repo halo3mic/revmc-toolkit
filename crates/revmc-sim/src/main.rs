@@ -5,7 +5,9 @@ mod aot_evm;
 mod build;
 mod utils;
 mod sim;
+mod fn_loader;
 
+use build::CompilerOptions;
 use reth_revm::database::StateProviderDatabase;
 use revm::primitives::{address, Bytes, FixedBytes, TransactTo};
 
@@ -33,6 +35,8 @@ use reth_chainspec::ChainSpecBuilder;
 
 fn main() -> Result<()>{
     dotenv::dotenv().ok();
+
+    // compile_example()?;
     
     run_tx_example()?;
     
@@ -90,14 +94,17 @@ fn run_tx_example() -> Result<()> {
 
 
     let db = CacheDB::new(StateProviderDatabase::new(state_provider));
+
     let env = EnvWithHandlerCfg::new_with_cfg_env(cfg_env, block_env, TxEnv::default());
-    let mut evm = revm::Evm::builder().with_db(db).with_env_with_handler_cfg(env).build();
+    // let mut evm = revm::Evm::builder().with_db(db).with_env_with_handler_cfg(env).build(); // Normie evm
 
-    // // todo: get all aotc contracts
-    // let evm = aot_evm::create_evm(vec[
-    //     (label.to_string(), code.hash_slow()).into(),
+    let dir_path = std::env::current_dir()?.join(".data");
+    let dir_path_str = dir_path.to_string_lossy().to_string();
 
-    // ])
+    println!("creating evm");
+    let evm = aot_evm::create_evm(dir_path_str, None, db, env)?;
+
+
 
     let res = sim::sim_txs(
         vec![tx], 
@@ -122,22 +129,19 @@ fn compile_example() -> Result<()> {
     let contracts = vec![
         utils::CompileArgsWithAddress {
             address: address!("f164fC0Ec4E93095b804a4795bBe1e041497b92a"),
-            label: String::from("univ2_router"),
-            options: None,
+            options: Some(CompilerOptions::default().with_label("univ3_router"))
         },
         utils::CompileArgsWithAddress {
             address: address!("1111111254eeb25477b68fb85ed929f73a960582"),
-            label: String::from("1inch_v5"),
-            options: None,
+            options: Some(CompilerOptions::default().with_label("1inch_v5"))
         },
         utils::CompileArgsWithAddress {
             address: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
-            label: String::from("aave_v3"),
-            options: None,
+            options: Some(CompilerOptions::default().with_label("aave_v3")),
         },
     ];
     let state_provider = Arc::new(provider_factory.latest()?);
-    utils::compile_contracts_with_address(state_provider, contracts)?;
+    utils::compile_contracts_with_address(state_provider, contracts, None)?;
 
     Ok(())
 } 

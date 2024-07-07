@@ -17,20 +17,25 @@ use rayon::prelude::*;
 
 const DEFAULT_DATA_DIR: &str = ".data";
 
-pub struct CompileArgs {
-    pub label: String,
+pub struct CodeWithOptions {
     pub code: Bytecode,
     pub options: Option<CompilerOptions>,
 }
 
-pub fn compile_contracts(args: Vec<CompileArgs>) -> Vec<Result<()>> {
+impl From<Bytecode> for CodeWithOptions {
+    fn from(code: Bytecode) -> Self {
+        Self { code, options: None }
+    }
+}
+
+pub fn compile_contracts(args: Vec<CodeWithOptions>, fallback_opt: Option<CompilerOptions>) -> Vec<Result<()>> {
     args.into_par_iter()
-        .map(|arg| compile_contract(arg))
+        .map(|arg| compile_contract(arg.code, arg.options.or(fallback_opt.clone())))
         .collect()
 }
 
-pub fn compile_contract(arg: CompileArgs) -> Result<()> {
-    compile(&arg.label, &arg.code, arg.options)
+pub fn compile_contract(code: Bytecode, options: Option<CompilerOptions>) -> Result<()> {
+    compile(&code, options.unwrap_or_default())
 }
 
 /**
@@ -40,20 +45,22 @@ pub fn compile_contract(arg: CompileArgs) -> Result<()> {
  * - Frame pointers are useful for debugging, but they can be disabled to slightly improve performance.
  * - Useful for debugging, but it can be disabled for moderate performance improvement.
  */
+#[derive(Debug, Clone)]
 pub struct CompilerOptions {
-    out_dir: Option<PathBuf>,
-    spec_id: SpecId,
+    pub out_dir: Option<PathBuf>,
+    pub spec_id: SpecId,
 
-    target_features: Option<String>,
-    target_cpu: Option<String>,
-    target: String,
+    pub target_features: Option<String>,
+    pub target_cpu: Option<String>,
+    pub target: String,
 
-    opt_level: OptimizationLevel,
-    no_link: bool,
-    no_gas: bool,    
-    no_len_checks: bool,
-    frame_pointers: bool,
-    debug_assertions: bool,
+    pub opt_level: OptimizationLevel,
+    pub no_link: bool,
+    pub no_gas: bool,    
+    pub no_len_checks: bool,
+    pub frame_pointers: bool,
+    pub debug_assertions: bool,
+    pub label: Option<String>,
 }
 
 impl CompilerOptions {
@@ -70,8 +77,18 @@ impl CompilerOptions {
             no_link: false,
             opt_level: OptimizationLevel::Default, // todo: try aggresive
             spec_id: SpecId::CANCUN, // ! EOF yet not implemented
+            label: None,
         }
     }
+}
+
+impl CompilerOptions {
+
+    pub fn with_label(mut self, label: impl ToString) -> Self {
+        self.label = Some(label.to_string());
+        self
+    }
+
 }
 
 impl Default for CompilerOptions {
@@ -80,23 +97,26 @@ impl Default for CompilerOptions {
     }
 }
 
-fn compile(label: &str, bytecode: &Bytecode, opt: Option<CompilerOptions>) -> Result<()> {
-    let opt = opt.unwrap_or_default();
+fn compile(bytecode: &Bytecode, opt: CompilerOptions) -> Result<()> {
+    let name = bytecode.hash_slow().to_string();
+
     let ctx = Context::create();
-    let mut compiler = create_compiler(label, &ctx, &opt)?;
+    let mut compiler = create_compiler(&name, &ctx, &opt)?;
 
     let CompilerOptions { out_dir, no_link, spec_id, .. } = opt; 
     let out_dir = out_dir.map_or_else(
-        || create_default_dir(label),
+        || create_default_dir(&name),
         |dir| Ok(dir)
     )?;
     
-    compiler.translate(Some(&label), bytecode.bytes_slice(), spec_id)?;
-    let obj = write_precompiled_obj(&mut compiler, label, &out_dir)?;
+    compiler.translate(Some(&name), bytecode.bytes_slice(), spec_id)?;
+    let obj = write_precompiled_obj(&mut compiler, &name, &out_dir)?;
 
     if !no_link {
         link(&obj, &out_dir)?;
     }
+
+    // todo: if label exists link it to the bytecode hash
 
     Ok(())
 }
@@ -144,15 +164,14 @@ fn link(obj: &PathBuf, out_dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-// todo: define path
-pub fn load(label: &str) -> Result<(revmc::EvmCompilerFn, Library)> {
-    let path = default_dir(label).join("a.so");
-    println!("Loading {label} at path {}", path.display());
-    let lib = unsafe { Library::new(path) }?;
-    let f: libloading::Symbol<'_, revmc::EvmCompilerFn> =
-        unsafe { lib.get(label.as_bytes())? };
-    Ok((*f, lib))
-}
+// pub fn load(label: &str) -> Result<(revmc::EvmCompilerFn, Library)> {
+//     let path = default_dir(label).join("a.so");
+//     println!("Loading {label} at path {}", path.display());
+//     let lib = unsafe { Library::new(path) }?;
+//     let f: libloading::Symbol<'_, revmc::EvmCompilerFn> =
+//         unsafe { lib.get(label.as_bytes())? };
+//     Ok((*f, lib))
+// }
 
 fn default_dir(label: &str) -> PathBuf {
     std::env::current_dir()
@@ -165,4 +184,10 @@ fn create_default_dir(label: &str) -> Result<PathBuf> {
     let dir = default_dir(label);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+fn label_bytecodehash(label: &str, bytecode: &Bytecode) {
+    // get dir
+    // if it doesn't exist yet create it 
+    // write label to bytecode into it
 }

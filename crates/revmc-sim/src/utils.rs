@@ -1,4 +1,4 @@
-use super::build::{self, CompilerOptions, CompileArgs};
+use super::build::{self, CompilerOptions, CodeWithOptions};
 use reth_db::{open_db_read_only, DatabaseEnv};
 use reth_provider::{
     providers::StaticFileProvider,
@@ -16,17 +16,23 @@ use eyre::{OptionExt, Result};
 
 pub struct CompileArgsWithAddress {
     pub address: Address,
-    pub label: String,
     pub options: Option<CompilerOptions>,
 }
 
 impl CompileArgsWithAddress {
 
-    fn into_compile_args(self, state_provider: &impl StateProvider) -> Result<CompileArgs> {
+    fn new(address: Address) -> Self {
+
+        Self {
+            address,
+            options: None,
+        }
+    }
+
+    fn into_code_with_opt(self, state_provider: &impl StateProvider) -> Result<CodeWithOptions> {
         let code = state_provider.account_code(self.address)?
             .ok_or_eyre("No code found for address")?;
-        Ok(CompileArgs {
-            label: self.label,
+        Ok(CodeWithOptions {
             code,
             options: self.options,
         })
@@ -35,15 +41,15 @@ impl CompileArgsWithAddress {
 
 pub fn compile_contracts_with_address(
     state_provider: Arc<impl StateProvider>,
-    contracts: impl IntoIterator<Item=CompileArgsWithAddress>
+    contracts: impl IntoIterator<Item=CompileArgsWithAddress>,
+    fallback_opt: Option<CompilerOptions>,
 ) -> Result<Vec<Result<()>>> {
     let contracts = contracts.into_iter()
-        .map(|c| c.into_compile_args(&state_provider))
+        .map(|c| c.into_code_with_opt(&state_provider))
         .collect::<Result<Vec<_>>>()?;
-    let results = build::compile_contracts(contracts);
+    let results = build::compile_contracts(contracts, fallback_opt);
     Ok(results)
 }
-
 
 pub fn make_provider_factory(db_path: &str) -> Result<ProviderFactory<DatabaseEnv>> {
     let db_path = Path::new(db_path);
