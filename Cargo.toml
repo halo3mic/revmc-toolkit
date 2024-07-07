@@ -1,6 +1,10 @@
 [workspace]
 members = ["crates/*"]
-default-members = ["crates/revmc-sim", "crates/revmc-sim-build"]
+default-members = [
+    "crates/revmc-sim", 
+    "crates/revmc-sim-build",
+    "crates/revmc-sim-cli",
+]
 resolver = "2"
 
 [workspace.dependencies]

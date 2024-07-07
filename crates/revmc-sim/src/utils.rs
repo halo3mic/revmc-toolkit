@@ -33,7 +33,7 @@ impl CompileArgsWithAddress {
         let code = state_provider.account_code(self.address)?
             .ok_or_eyre("No code found for address")?;
         Ok(CodeWithOptions {
-            code,
+            code: code.bytes_slice().to_vec(),
             options: self.options,
         })
     }

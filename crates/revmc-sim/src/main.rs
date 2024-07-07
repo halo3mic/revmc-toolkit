@@ -38,30 +38,6 @@ fn main() -> Result<()>{
     // compile_example()?;
     
     run_tx_example()?;
-    
-
-    
-    // Run
-    
-    // let univ2_router = address!("f164fC0Ec4E93095b804a4795bBe1e041497b92a");
-    // let label = "univ2_router";
-    // let state_provider = provider_factory.latest()?;
-    // let code = state_provider.account_code(univ2_router)?
-    //     .ok_or_eyre("No code found for address")?;
-    // let spdb = StateProviderDatabase::new(state_provider);
-
-    // let mut evm = evm::create_evm(vec![
-    //     (label.to_string(), code.hash_slow()).into()
-    // ], spdb)?;
-
-    // evm.context.evm.env.tx.transact_to = TransactTo::Call(univ2_router);
-    // evm.context.evm.env.tx.data = Bytes::from_str("0xd06ca61f0000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006982508145454ce325ddbe47a25d4ec3d2311933")?;
-    // evm.context.evm.env.tx.gas_limit = 100_000;
-
-    // match evm.transact() {
-    //     Ok(res) =>  eprintln!("{:#?}", res.result),
-    //     Err(e) => println!("error: {:?}", e),
-    // }
 
     Ok(())
 }
@@ -72,7 +48,7 @@ fn run_tx_example() -> Result<()> {
     let db_path = std::env::var("RETH_DB_PATH")?;
     let provider_factory = utils::make_provider_factory(&db_path)?;
 
-    let tx_hash = FixedBytes::<32>::from_str("0xe7bdb100811cdd8da59c8afa9999d49d3343dc90d2578cb3e9d3ff9fe26e34f9")?;
+    let tx_hash = FixedBytes::<32>::from_str("0x1fe4ff2ef38d406d40dedd760a555120559866888715ff88f6cef90427c3c33b")?;
     let (tx, meta) = provider_factory.transaction_by_hash_with_meta(tx_hash)?
         .ok_or_eyre("No tx found")?;
 
@@ -121,27 +97,4 @@ fn run_block_example() {
 
 }
 
-fn compile_example() -> Result<()> {
-    let db_path = std::env::var("RETH_DB_PATH")?;
-    let provider_factory = utils::make_provider_factory(&db_path)?;
-
-    let contracts = vec![
-        utils::CompileArgsWithAddress {
-            address: address!("f164fC0Ec4E93095b804a4795bBe1e041497b92a"),
-            options: Some(CompilerOptions::default().with_label("univ3_router"))
-        },
-        utils::CompileArgsWithAddress {
-            address: address!("1111111254eeb25477b68fb85ed929f73a960582"),
-            options: Some(CompilerOptions::default().with_label("1inch_v5"))
-        },
-        utils::CompileArgsWithAddress {
-            address: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
-            options: Some(CompilerOptions::default().with_label("aave_v3")),
-        },
-    ];
-    let state_provider = Arc::new(provider_factory.latest()?);
-    utils::compile_contracts_with_address(state_provider, contracts, None)?;
-
-    Ok(())
-} 
 
