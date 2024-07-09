@@ -8,6 +8,8 @@ use eyre::Result;
 pub use compiler::CompilerOptions;
 
 
+// todo: skip compilation for already compiled
+
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct ConfigFile {
     pub fallback_config: Option<CompilerOptions>,

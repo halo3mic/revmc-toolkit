@@ -43,7 +43,9 @@ pub fn register_handler<DB: Database>(handler: &mut EvmHandler<'_, ExternalConte
     handler.execution.execute_frame = Arc::new(move |frame, memory, tables, context| {
         let interpreter = frame.interpreter_mut();
         let bytecode_hash = interpreter.contract.hash.unwrap_or_default();
+        println!("Calling fn on {:?}", interpreter.contract.target_address);
         if let Some(f) = context.external.get_function(bytecode_hash) {
+            println!("Calling AOT fn with input {:?}", interpreter.contract.input);
             Ok(unsafe { f.call_with_interpreter_and_memory(interpreter, memory, context) })
         } else {
             prev(frame, memory, tables, context)

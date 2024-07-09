@@ -1,19 +1,20 @@
-use reth_provider::StateProvider;
-use reth_revm::{database::StateProviderDatabase, DatabaseRef};
-use reth_primitives::{transaction::FillTxEnv, Address, PooledTransactionsElement, TransactionSigned};
 use reth_rpc_types::{EthCallBundleResponse, EthCallBundleTransactionResult};
+use reth_primitives::{transaction::FillTxEnv, TransactionSigned};
 use revm::{
-    db::CacheDB, Evm, Database, primitives::{
-        BlockEnv, CfgEnvWithHandlerCfg, EnvKzgSettings, EnvWithHandlerCfg, FixedBytes, ResultAndState, TxEnv, U256,
-    }, DatabaseCommit,
+    primitives::{FixedBytes, ResultAndState, U256}, 
+    DatabaseCommit,
+    DatabaseRef,
+    db::CacheDB, 
+    Evm, 
 };
 
 use eyre::{OptionExt, Result};
 
+
 // modified code from reth's EthBundle::call_bundle
 pub fn sim_txs<EXT, ExtDB: DatabaseRef>(
-    transactions: Vec<TransactionSigned>,
-    mut evm: Evm<'static, EXT, CacheDB<ExtDB>>,
+    transactions: &Vec<TransactionSigned>,
+    evm: &mut Evm<'static, EXT, CacheDB<ExtDB>>,
 ) -> Result<EthCallBundleResponse> 
 where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
 {
@@ -33,8 +34,7 @@ where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
     let mut transactions = transactions.into_iter().peekable();
 
     while let Some(tx) = transactions.next() {
-        let tx = tx.try_into_ecrecovered().unwrap();
-        let signer = tx.signer();
+        let signer = tx.recover_signer().ok_or_eyre("Cannot recover signer")?;
 
         // todo: add validation
         // // Verify that the given blob data, commitments, and proofs are all valid for
@@ -79,7 +79,7 @@ where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
         let tx_res = EthCallBundleTransactionResult {
             coinbase_diff,
             eth_sent_to_coinbase,
-            from_address: tx.signer(),
+            from_address: signer,
             gas_fees,
             gas_price: U256::from(gas_price),
             gas_used,
