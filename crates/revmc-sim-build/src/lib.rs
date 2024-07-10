@@ -1,15 +1,17 @@
 mod utils;
 mod compiler;
 
+use serde::{Deserialize, Deserializer};
 use std::path::PathBuf;
+use serde_json::Value;
 use rayon::prelude::*;
 use eyre::Result;
+use hex;
 
-pub use compiler::CompilerOptions;
+pub use compiler::{CompilerOptions, AOTCompiler};
 
 
-// todo: skip compilation for already compiled
-
+// todo: is this still relevant given we have similar functionality in cli? + address field is a problem
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct ConfigFile {
     pub fallback_config: Option<CompilerOptions>,
@@ -23,7 +25,6 @@ impl ConfigFile {
         Ok(config)
     }
 }
-
 
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct CodeWithOptions {
@@ -41,20 +42,18 @@ impl From<Vec<u8>> for CodeWithOptions {
 pub fn compile_contracts(
     args: Vec<CodeWithOptions>, 
     fallback_opt: Option<CompilerOptions>
-) -> Vec<Result<()>> {
-    args.into_par_iter()
+) -> Result<Vec<Result<()>>> {
+    let compiled_contracts = load_compiled(utils::default_dir())?;
+    Ok(args.into_par_iter()
+        .filter(|a| !compiled_contracts.contains(&utils::bytecode_hash_str(&a.code)))
         .map(|arg| compile_contract(arg.code, arg.options.or(fallback_opt.clone())))
-        .collect()
+        .collect())
 }
 
 pub fn compile_contract(code: Vec<u8>, options: Option<CompilerOptions>) -> Result<()> {
-    let compiler: compiler::AOTCompiler = options.unwrap_or_default().into();
+    let compiler: AOTCompiler = options.unwrap_or_default().into();
     compiler.compile(&code)
 }
-
-use serde::{Deserialize, Deserializer};
-use serde_json::Value;
-use hex;
 
 fn hex_or_vec<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
@@ -74,4 +73,16 @@ where
             .collect(),
         _ => Err(serde::de::Error::custom("Expected hex string or array of numbers")),
     }
+}
+
+fn load_compiled(path: PathBuf) -> Result<Vec<String>> {
+    let vec = std::fs::read_dir(path)?
+        .map(|res| res.map(|e| {
+            let path = e.path();
+            let file_name = path.file_name()
+                .unwrap().to_owned().into_string().unwrap();
+            file_name
+        }))
+        .collect::<Result<Vec<_>, std::io::Error>>()?;
+    Ok(vec)
 }

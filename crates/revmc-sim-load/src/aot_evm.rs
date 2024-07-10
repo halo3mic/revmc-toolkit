@@ -38,17 +38,28 @@ impl ExternalContext {
     }
 }
 
+// todo: rm 
+// use std::time::Instant;
+
 pub fn register_handler<DB: Database>(handler: &mut EvmHandler<'_, ExternalContext, DB>) {
     let prev = handler.execution.execute_frame.clone();
     handler.execution.execute_frame = Arc::new(move |frame, memory, tables, context| {
         let interpreter = frame.interpreter_mut();
         let bytecode_hash = interpreter.contract.hash.unwrap_or_default();
-        println!("Calling fn on {:?}", interpreter.contract.target_address);
+        // println!("Calling fn on {:?} with codehash {bytecode_hash:?}", interpreter.contract.target_address);
         if let Some(f) = context.external.get_function(bytecode_hash) {
-            println!("Calling AOT fn with input {:?}", interpreter.contract.input);
-            Ok(unsafe { f.call_with_interpreter_and_memory(interpreter, memory, context) })
+            // println!("Calling AOT fn with input {:?}", interpreter.contract.input);
+            // let start = Instant::now();
+            let res = unsafe { f.call_with_interpreter_and_memory(interpreter, memory, context) };
+            // let elapsed = start.elapsed();
+            // println!("AOT fn took: {:?}", elapsed);
+            Ok(res)
         } else {
-            prev(frame, memory, tables, context)
+            // let start = Instant::now();
+            let res = prev(frame, memory, tables, context);
+            // let elapsed = start.elapsed();
+            // println!("Native fn took: {:?}", elapsed);
+            res
         }
     });
 }

@@ -3,7 +3,7 @@ use revmc::{
     EvmLlvmBackend, 
     EvmCompiler, 
 };
-use revm::primitives::{SpecId, keccak256};
+use revm::primitives::SpecId;
 
 use eyre::{ensure, Ok, Result};
 use serde::Deserialize;
@@ -45,12 +45,12 @@ impl CompilerOptions {
             target: "native".to_string(),
             target_cpu: None,
             target_features: None,
-            no_gas: false, // todo try true for performance
-            no_len_checks: false, // todo try true for performance
+            no_gas: true, // todo try true for performance
+            no_len_checks: true, // todo try true for performance
             frame_pointers: false,
             debug_assertions: false,
             no_link: false,
-            opt_level: OptimizationLevelDeseralizable::Default, // todo: try aggresive
+            opt_level: OptimizationLevelDeseralizable::Aggressive, // todo: try aggresive
             spec_id: SpecId::CANCUN, // ! EOF yet not implemented
             label: None,
         }
@@ -84,7 +84,7 @@ pub struct AOTCompiler {
 impl AOTCompiler {
     
     pub fn compile(&self, bytecode: &[u8]) -> Result<()> {    
-        let name = Self::name_from_bytecode(bytecode);
+        let name = utils::bytecode_hash_str(bytecode);
 
         let ctx = Context::create();
         let mut compiler = self.create_compiler(&ctx, &name)?;    
@@ -147,10 +147,6 @@ impl AOTCompiler {
         ensure!(so.exists(), "Failed to link object file");
         eprintln!("Linked shared object file to {}", so.display());
         Ok(())
-    }
-
-    fn name_from_bytecode(bytecode: &[u8]) -> String {
-        keccak256(bytecode).to_string()
     }
 
     fn out_dir(&self, name: &str) -> Result<PathBuf> {

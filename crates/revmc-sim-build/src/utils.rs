@@ -16,6 +16,10 @@ pub fn make_dir(dir_path: &PathBuf) -> eyre::Result<()> {
     Ok(())
 }
 
+pub fn bytecode_hash_str(bytecode: &[u8]) -> String {
+    revm::primitives::keccak256(bytecode).to_string()
+}
+
 #[derive(serde::Deserialize, Debug, Clone)]
 pub enum OptimizationLevelDeseralizable {
     None,

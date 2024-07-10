@@ -23,18 +23,18 @@ pub struct BuildArgs {
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
-    #[arg(required = false, help = "TxHash of the transaction to run/bench.")]
+    #[arg(short, long, help = "TxHash of the transaction to run/bench.")]
     pub tx_hash: Option<String>, 
-    #[arg(required = false, help = "BlockNumber of the block to run/bench.")]
+    #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
     pub block_num: Option<String>,
-    #[arg(required = true, help = "aot_compiled or native")]
+    #[arg(short, long, help = "aot_compiled or native")]
     pub run_type: String,
 }
 
 #[derive(Args, Debug)]
 pub struct BenchArgs {
-    #[arg(required = false, help = "TxHash of the transaction to run/bench.")]
+    #[arg(short, long, help = "TxHash of the transaction to run/bench.")]
     pub tx_hash: Option<String>, 
-    #[arg(required = false, help = "BlockNumber of the block to run/bench.")]
+    #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
     pub block_num: Option<String>,
 }

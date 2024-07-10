@@ -31,6 +31,7 @@ impl EvmCompilerFnLoader {
 
     pub fn load_all(&self) -> Result<Vec<(B256, (EvmCompilerFn, Library))>> {
         let mut hash_fn_pairs = vec![];
+        println!("Loading from path: {:?}", self.dir_path);
         for entry in std::fs::read_dir(&self.dir_path)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() {

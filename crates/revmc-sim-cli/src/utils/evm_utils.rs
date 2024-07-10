@@ -14,17 +14,23 @@ use revmc_sim_load::{ExternalContext, self as loader};
 pub fn create_evm<ExtDB: revm::Database + revm::DatabaseRef>(
     dir_path: String,
     db: CacheDB<ExtDB>, 
-    cfg_env: EnvWithHandlerCfg,
+    cfg_env: Option<EnvWithHandlerCfg>,
     codehash_select: Option<Vec<B256>>,
 ) -> Result<Evm<'static, ExternalContext, CacheDB<ExtDB>>> {
     let external_ctx = loader::build_external_context(dir_path, codehash_select)?;
     let evm = revm::Evm::builder()
         .with_db(db)
-        .with_external_context(external_ctx)
-        .with_env_with_handler_cfg(cfg_env)
-        .append_handler_register(loader::register_handler)
-        .build();
-    Ok(evm)
+        .with_external_context(external_ctx);
+    if let Some(cfg_env) = cfg_env {
+        Ok(evm
+            .with_env_with_handler_cfg(cfg_env)
+            .append_handler_register(loader::register_handler)
+            .build())
+    } else {
+        Ok(evm
+            .append_handler_register(loader::register_handler)
+            .build())
+    }
 }
 
 
