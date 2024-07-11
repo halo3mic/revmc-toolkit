@@ -54,7 +54,8 @@ fn main() -> Result<()> {
             // todo: parse config path
             let state_provider = provider_factory.latest()?;
             let path = default_build_config_path()?;
-            utils::build::compile_from_file(state_provider, &path)?;
+            utils::build::compile_from_file(state_provider, &path)?
+                .into_iter().collect::<Result<Vec<_>>>()?;
         }
         Commands::Run(run_args) => {
             let run_type = run_args.run_type.parse::<RunType>()?;

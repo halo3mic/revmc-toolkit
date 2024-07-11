@@ -1,4 +1,6 @@
 /target
 .env
-.data
+.data/*
 .vscode
+
+!/.data/.gitkeep
