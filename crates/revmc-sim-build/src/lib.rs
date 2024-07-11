@@ -43,16 +43,20 @@ pub fn compile_contracts(
     args: Vec<CodeWithOptions>, 
     fallback_opt: Option<CompilerOptions>
 ) -> Result<Vec<Result<()>>> {
-    let compiled_contracts = load_compiled(utils::default_dir())?;
+    // todo: check for duplicates among the args
     Ok(args.into_par_iter()
-        .filter(|a| !compiled_contracts.contains(&utils::bytecode_hash_str(&a.code)))
-        .map(|arg| compile_contract(arg.code, arg.options.or(fallback_opt.clone())))
+        .map(|arg| compile_contract(&arg.code, arg.options.or(fallback_opt.clone())))
         .collect())
 }
 
-pub fn compile_contract(code: Vec<u8>, options: Option<CompilerOptions>) -> Result<()> {
-    let compiler: AOTCompiler = options.unwrap_or_default().into();
-    compiler.compile(&code)
+pub fn compile_contract(code: &[u8], options: Option<CompilerOptions>) -> Result<()> {
+    let compiled_contracts = load_compiled(utils::default_dir())?; // todo: does it make sense to load this every time?
+    let is_compiled = compiled_contracts.contains(&utils::bytecode_hash_str(&code));
+    if !is_compiled {
+        let compiler: AOTCompiler = options.unwrap_or_default().into();
+        return compiler.compile(&code);
+    }
+    return Ok(());
 }
 
 fn hex_or_vec<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>

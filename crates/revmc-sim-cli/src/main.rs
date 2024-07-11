@@ -23,8 +23,11 @@ use std::str::FromStr;
 use criterion::Criterion;
 
 use cli::{Cli, Commands};
+use std::sync::Arc;
 use clap::Parser;
 
+use revmc::primitives::hex;
+use revm::primitives::{AccountInfo, Bytecode, TransactTo, address, U256, ExecutionResult};
 
 struct Config {
     provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
@@ -66,7 +69,7 @@ fn main() -> Result<()> {
                 run_block_sim(block_num, run_type)?;
             } else {
                 // todo: format
-                run_call_sim(Call::Factorial, run_type, Config { dir_path, provider_factory })?;
+                run_call_sim(Call::Fibbonacci, run_type, Config { dir_path, provider_factory })?;
                 return Err(eyre::eyre!("Please provide either a transaction hash or a block number."));
             }
         }
@@ -80,7 +83,7 @@ fn main() -> Result<()> {
                 run_block_benchmarks(block_num)?;
             } else {
                 // todo: call type in args
-                run_call_benchmarks(Call::Factorial, Config { dir_path, provider_factory })?;
+                run_call_benchmarks(Call::Fibbonacci, Config { dir_path, provider_factory })?;
             }
         }
     }
@@ -160,21 +163,16 @@ impl FromStr for RunType {
 }
 
 fn run_tx_sim(tx_hash: B256, run_type: RunType, config: Config) -> Result<()> {
-    let mut tx_sim = make_tx_sim(tx_hash, run_type, &config)?;
-    tx_sim()
+    make_tx_sim(tx_hash, run_type, &config)?()
 }
 
 fn run_block_sim(block_num: u64, run_type: RunType) -> Result<()> {
-    let mut block_sim = make_block_sim(block_num, run_type)?;
-    block_sim()
+    make_block_sim(block_num, run_type)?()
 }
 
-fn run_call_sim(call: Call, run_type: RunType, config: Config) -> Result<()> {
-    let mut call_sim = make_call_sim(call, run_type, &config)?;
-    call_sim()
+fn run_call_sim(call: Call, run_type: RunType, config: Config) -> Result<ExecutionResult> {
+    make_call_sim(call, run_type, &config)?()
 }
-
-use std::sync::Arc;
 
 // todo: count contract touches + if it was external fn or not
 // todo: get all contracts for the tx/block and compile them if missing (before bench and run) - cli flag
@@ -205,7 +203,7 @@ fn make_tx_sim(tx_hash: B256, run_type: RunType, config: &Config) -> Result<Box<
             }));
         },
         RunType::AOTCompiled => {
-            let mut evm = utils::evm::create_evm(dir_path.clone(), db, Some(env), None)?;
+            let mut evm = utils::evm::create_evm(dir_path, db, Some(env), None)?;
             let tx = tx.clone();
             return Ok(Box::new(move || {
                 let res = sim::sim_txs(&vec![tx.clone()], &mut evm)?;
@@ -244,7 +242,7 @@ pub fn make_block_sim(block_num: u64, run_type: RunType) -> Result<Box<dyn FnMut
             }))
         },
         RunType::AOTCompiled => {
-            let mut evm = utils::evm::create_evm(dir_path_str, db, Some(env), None)?;
+            let mut evm = utils::evm::create_evm(&dir_path_str, db, Some(env), None)?;
             return Ok(Box::new(move || {
                 let res = sim::sim_txs(&block.body, &mut evm)?;
                 // todo: check results are ok (eg. gas used)
@@ -256,44 +254,45 @@ pub fn make_block_sim(block_num: u64, run_type: RunType) -> Result<Box<dyn FnMut
 
 #[derive(Clone, Copy)]
 enum Call {
-    Factorial
+    Fibbonacci
 }
-
-use revmc::primitives::hex;
 
 const FIBONACCI_CODE: &[u8] =
     &hex!("5f355f60015b8215601a578181019150909160019003916005565b9150505f5260205ff3");
-// #[allow(dead_code)]
-// const FIBONACCI_HASH: [u8; 32] =
-//     hex!("ab1ad1211002e1ddb8d9a4ef58a902224851f6a0273ee3e87276a8d21e649ce8");
 
 
-use revm::primitives::{AccountInfo, Bytecode, TransactTo, address, U256};
-
-fn make_call_sim(call: Call, run_type: RunType, config: &Config) -> Result<Box<dyn FnMut() -> Result<()>>> {
-    // todo: compiled the contract if not already
-    // todo: different calls
-    let actual_num = U256::from(100_000);
-
+fn make_call_sim(call: Call, run_type: RunType, config: &Config) -> Result<Box<dyn FnMut() -> Result<ExecutionResult>>> {
     let Config { provider_factory, dir_path } = config;
-    
     let state_provider = provider_factory.latest()?;
     let mut db = CacheDB::new(StateProviderDatabase::new(state_provider));
+    
+    let tx_env = match call {
+        Call::Fibbonacci => {
+            let actual_num = U256::from(100_000);
+            revmc_sim_build::compile_contract(FIBONACCI_CODE, None)?;
+            let bytecode = Bytecode::new_raw(FIBONACCI_CODE.into());
+            let fibonacci_address = address!("0000000000000000000000000000000000001234");
+            let mut account_info = AccountInfo::default();
+            account_info.code_hash = bytecode.hash_slow();
+            account_info.code = Some(bytecode);
+            db.insert_account_info(fibonacci_address, account_info);
+            let mut tx = TxEnv::default();
+            tx.transact_to = TransactTo::Call(fibonacci_address);
+            tx.data = actual_num.to_be_bytes_vec().into();
+            tx
+        }
+    };
+    make_call_fn(tx_env, run_type, db, Some(dir_path))
+}
 
-
-    // let code_bytes = Bytes::from_str("0x5f355f60015b8215601a578181019150909160019003916005565b9150505f5260205ff3")?;
-    let bytecode = Bytecode::new_raw(FIBONACCI_CODE.into());
-    let fibonacci_address = address!("0000000000000000000000000000000000001234");
-    let mut account_info = AccountInfo::default();
-    account_info.code_hash = bytecode.hash_slow();
-    account_info.code = Some(bytecode);
-    println!("Bytecode hash is: {:?}", account_info.code_hash);
-    db.insert_account_info(fibonacci_address, account_info);
-
-    let mut tx = TxEnv::default();
-    tx.transact_to = TransactTo::Call(fibonacci_address);
-    tx.data = actual_num.to_be_bytes_vec().into();
-
+fn make_call_fn<ExtDB: revm::Database + revm::DatabaseRef + 'static>(
+    tx: TxEnv,
+    run_type: RunType,
+    db: CacheDB<ExtDB>,
+    dir_path: Option<&str>,
+) -> Result<Box<dyn FnMut() -> Result<ExecutionResult>>> 
+where <ExtDB as revm::DatabaseRef>::Error: std::fmt::Debug
+{
     match run_type {
         RunType::Native => {
             let mut evm = revm::Evm::builder()
@@ -302,19 +301,16 @@ fn make_call_sim(call: Call, run_type: RunType, config: &Config) -> Result<Box<d
             return Ok(Box::new(move || {
                 evm.context.evm.env.tx = tx.clone();
                 let result = evm.transact().unwrap();
-                // println!("Result: {:?}", result);
-                // todo: check results are ok (eg. gas used)
-                Ok(())
+                Ok(result.result)
             }));
         },
         RunType::AOTCompiled => {
-            let mut evm = utils::evm::create_evm(dir_path.clone(), db, None, None)?;
+            let dir_path = dir_path.ok_or_else(|| eyre::eyre!("Missing dir path"))?;
+            let mut evm = utils::evm::create_evm(dir_path, db, None, None)?;
             return Ok(Box::new(move || {
                 evm.context.evm.env.tx = tx.clone();
                 let result = evm.transact().unwrap();
-                // println!("Result: {:?}", result);
-                // todo: check results are ok (eg. gas used)
-                Ok(())
+                Ok(result.result)
             }))
         }
     }

@@ -12,7 +12,7 @@ use revmc_sim_load::{ExternalContext, self as loader};
 
 
 pub fn create_evm<ExtDB: revm::Database + revm::DatabaseRef>(
-    dir_path: String,
+    dir_path: &str,
     db: CacheDB<ExtDB>, 
     cfg_env: Option<EnvWithHandlerCfg>,
     codehash_select: Option<Vec<B256>>,

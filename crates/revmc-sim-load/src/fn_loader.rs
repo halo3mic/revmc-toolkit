@@ -6,12 +6,12 @@ use std::{str::FromStr, path::PathBuf};
 use eyre::{OptionExt, Result};
 
 
-pub struct EvmCompilerFnLoader {
-    dir_path: String
+pub struct EvmCompilerFnLoader<'a> {
+    dir_path: &'a str
 }
 
-impl EvmCompilerFnLoader {
-    pub fn new(dir_path: String) -> Self {
+impl<'a> EvmCompilerFnLoader<'a> {
+    pub fn new(dir_path: &'a str) -> Self {
         Self { dir_path }
     }
 

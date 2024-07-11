@@ -76,7 +76,7 @@ impl Into<AOTCompiler> for CompilerOptions {
     }
 }
 
-
+#[derive(Default)]
 pub struct AOTCompiler {
     opt: CompilerOptions,
 }
