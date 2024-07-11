@@ -1,0 +1,36 @@
+{
+    "contracts": [
+        {
+            "label": "1inch_v5_A", 
+            "address": "0x1111111254eeb25477b68fb85ed929f73a960582"
+        },
+        {
+            "label": "1inch_v5_B",
+            "address": "0x1111111254eeb25477b68fb85ed929f73a960582"
+        }, 
+        {
+            "label": "curve_crypto", 
+            "address": "0xf5f5b97624542d72a9e06f04804bf81baa15e2b4"
+        }, 
+        {
+            "label": "curve_tricrypto_math",
+            "address": "0xcbff3004a20dbfe2731543aa38599a526e0fd6ee"
+        }, 
+        {
+            "label": "crv_3crypto_opt_weth", 
+            "address": "0x7f86bf177dd4f3494b841a37e810a34dd56c829b"
+        }, 
+        {
+            "label": "wbtc", 
+            "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"
+        },
+        {
+            "label": "usdc",
+            "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+        }, 
+        {
+            "label": "fibbonacci",
+            "code": "0x5f355f60015b8215601a578181019150909160019003916005565b9150505f5260205ff3"
+        }
+    ]
+}

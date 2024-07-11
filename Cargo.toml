@@ -1,10 +1,15 @@
 [workspace]
 members = ["crates/*"]
-default-members = ["crates/builder-revmc"]
+default-members = [
+    "crates/revmc-sim-load", 
+    "crates/revmc-sim-build",
+    "crates/revmc-sim-cli",
+]
 resolver = "2"
 
 [workspace.dependencies]
-builder-revmc = { path = "crates/builder-revmc" }
+revmc-sim-load = { path = "crates/revmc-sim-load" }
+revmc-sim-build = { path = "crates/revmc-sim-build" }
 
 reth-db = { git = "https://github.com/paradigmxyz/reth" } 
 reth-provider = { git = "https://github.com/paradigmxyz/reth" } 
@@ -12,6 +17,8 @@ reth-chainspec = { git = "https://github.com/paradigmxyz/reth" }
 reth-revm = { git = "https://github.com/paradigmxyz/reth" } 
 reth-primitives = { git = "https://github.com/paradigmxyz/reth", features = ["c-kzg"] } 
 reth-rpc-types = { git = "https://github.com/paradigmxyz/reth" }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth" }
+reth-evm = { git = "https://github.com/paradigmxyz/reth" }
 revmc = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-builtins = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-context = { git = "https://github.com/paradigmxyz/revmc" }
