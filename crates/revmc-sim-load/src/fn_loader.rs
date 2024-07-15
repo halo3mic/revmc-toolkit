@@ -35,7 +35,7 @@ impl<'a> EvmCompilerFnLoader<'a> {
         for entry in std::fs::read_dir(&self.dir_path)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() {
-                return Err(eyre::eyre!("Found non-directory entry at {:?}", entry.path()));
+                continue;
             }
             println!("Loading at path: {:?}", entry.path().display());
             let name = entry.file_name();

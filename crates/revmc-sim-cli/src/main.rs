@@ -2,6 +2,7 @@ mod utils;
 mod sim;
 mod cli;
 
+use reth_provider::StateProvider;
 use revm::{
     db::CacheDB, 
     primitives::{
@@ -54,7 +55,7 @@ fn main() -> Result<()> {
             // todo: parse config path
             let state_provider = provider_factory.latest()?;
             let path = default_build_config_path()?;
-            utils::build::compile_from_file(state_provider, &path)?
+            utils::build::compile_aot_from_file(state_provider, &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
         }
         Commands::Run(run_args) => {
@@ -98,6 +99,11 @@ fn run_tx_benchmarks(tx_hash: B256, config: Config) -> Result<()> {
         .sample_size(200)
         .measurement_time(Duration::from_secs(30));
 
+    let mut fn_jit = make_tx_sim(tx_hash, RunType::JITCompiled, &config)?;
+    criterion.bench_function("sim_tx_jit_compiled", |b| {
+        b.iter(|| { fn_jit() })
+    });
+
     let mut fn_aot = make_tx_sim(tx_hash, RunType::AOTCompiled, &config)?;
     criterion.bench_function("sim_tx_aot_compiled", |b| {
         b.iter(|| { fn_aot() })
@@ -116,6 +122,7 @@ fn run_block_benchmarks(block_num: u64) -> Result<()> {
         .sample_size(10)
         .measurement_time(Duration::from_secs(20));
 
+        
     criterion.bench_function("sim_block_aot_compiled", |b| {
         b.iter(|| run_block_sim(block_num, RunType::AOTCompiled))
     });
@@ -131,6 +138,11 @@ fn run_call_benchmarks(call: Call, config: Config) -> Result<()> {
     let mut criterion = Criterion::default()
         .sample_size(200)
         .measurement_time(Duration::from_secs(30));
+
+    let mut fn_jit = make_call_sim(call, RunType::JITCompiled, &config)?;
+    criterion.bench_function("sim_call_jit", |b| {
+        b.iter(|| { fn_jit() })
+    });
 
     let mut fn_aot = make_call_sim(call, RunType::AOTCompiled, &config)?;
     criterion.bench_function("sim_call_aot_compiled", |b| {
@@ -149,6 +161,7 @@ fn run_call_benchmarks(call: Call, config: Config) -> Result<()> {
 pub enum RunType {
     Native,
     AOTCompiled,
+    JITCompiled,
 }
 
 impl FromStr for RunType {
@@ -158,6 +171,7 @@ impl FromStr for RunType {
         match s {
             "native" => Ok(RunType::Native),
             "aot_compiled" => Ok(RunType::AOTCompiled),
+            "jit_compiled" => Ok(RunType::JITCompiled),
             _ => Err(eyre::eyre!("Invalid run type")),
         }
     }
@@ -188,8 +202,8 @@ fn make_tx_sim(tx_hash: B256, run_type: RunType, config: &Config) -> Result<Box<
         .ok_or_eyre("No block found")?;
 
     let env = env_with_handler_cfg(provider_factory.chain_spec().chain.id(), &block);
-    let state_provider = provider_factory.history_by_block_number((meta.block_number-1).into())?;
-    let db = CacheDB::new(StateProviderDatabase::new(state_provider));
+    let state_provider = Arc::new(provider_factory.history_by_block_number((meta.block_number-1).into())?);
+    let db = CacheDB::new(StateProviderDatabase::new(state_provider.clone()));
 
     match run_type {
         RunType::Native => {
@@ -205,6 +219,23 @@ fn make_tx_sim(tx_hash: B256, run_type: RunType, config: &Config) -> Result<Box<
         },
         RunType::AOTCompiled => {
             let mut evm = utils::evm::create_evm(dir_path, db, Some(env), None)?;
+            let tx = tx.clone();
+            return Ok(Box::new(move || {
+                let res = sim::sim_txs(&vec![tx.clone()], &mut evm)?;
+                // todo: check results are ok (eg. gas used)
+                Ok(())
+            }))
+        }, 
+        RunType::JITCompiled => {
+            let path = default_build_config_path()?; // todo pass as arg
+            let results = utils::build::compile_jit_from_file(Box::new(state_provider), &path)?
+                .into_iter().collect::<Result<Vec<_>>>()?;
+            let ext_ctx = revmc_sim_load::ExternalContext::from_fns(results);
+            let mut evm = revm::Evm::builder()
+                .with_db(db)
+                .with_external_context(ext_ctx)
+                .append_handler_register(revmc_sim_load::register_handler)
+                .build();
             let tx = tx.clone();
             return Ok(Box::new(move || {
                 let res = sim::sim_txs(&vec![tx.clone()], &mut evm)?;
@@ -249,6 +280,9 @@ pub fn make_block_sim(block_num: u64, run_type: RunType) -> Result<Box<dyn FnMut
                 // todo: check results are ok (eg. gas used)
                 Ok(())
             }))
+        }, 
+        RunType::JITCompiled => {
+            todo!()
         }
     }
 }
@@ -264,13 +298,13 @@ const FIBONACCI_CODE: &[u8] =
 
 fn make_call_sim(call: Call, run_type: RunType, config: &Config) -> Result<Box<dyn FnMut() -> Result<ExecutionResult>>> {
     let Config { provider_factory, dir_path } = config;
-    let state_provider = provider_factory.latest()?;
-    let mut db = CacheDB::new(StateProviderDatabase::new(state_provider));
+    let state_provider = Arc::new(provider_factory.latest()?);
+    let mut db = CacheDB::new(StateProviderDatabase::new(state_provider.clone()));
     
     let tx_env = match call {
         Call::Fibbonacci => {
             let actual_num = U256::from(100_000);
-            revmc_sim_build::compile_contract(FIBONACCI_CODE, None)?;
+            revmc_sim_build::compile_contract_aot(FIBONACCI_CODE, None)?;
             let bytecode = Bytecode::new_raw(FIBONACCI_CODE.into());
             let fibonacci_address = address!("0000000000000000000000000000000000001234");
             let mut account_info = AccountInfo::default();
@@ -283,14 +317,15 @@ fn make_call_sim(call: Call, run_type: RunType, config: &Config) -> Result<Box<d
             tx
         }
     };
-    make_call_fn(tx_env, run_type, db, Some(dir_path))
+    make_call_fn(tx_env, run_type, db, state_provider, Some(dir_path))
 }
 
 fn make_call_fn<ExtDB: revm::Database + revm::DatabaseRef + 'static>(
     tx: TxEnv,
     run_type: RunType,
     db: CacheDB<ExtDB>,
-    dir_path: Option<&str>,
+    state_provider: Arc<impl StateProvider + ?Sized>,
+    dir_path: Option<&str>, // todo: make this related to enum type instead
 ) -> Result<Box<dyn FnMut() -> Result<ExecutionResult>>> 
 where <ExtDB as revm::DatabaseRef>::Error: std::fmt::Debug
 {
@@ -308,6 +343,22 @@ where <ExtDB as revm::DatabaseRef>::Error: std::fmt::Debug
         RunType::AOTCompiled => {
             let dir_path = dir_path.ok_or_else(|| eyre::eyre!("Missing dir path"))?;
             let mut evm = utils::evm::create_evm(dir_path, db, None, None)?;
+            return Ok(Box::new(move || {
+                evm.context.evm.env.tx = tx.clone();
+                let result = evm.transact().unwrap();
+                Ok(result.result)
+            }))
+        }, 
+        RunType::JITCompiled => {
+            let path = default_build_config_path()?; // todo pass as arg
+            let results = utils::build::compile_jit_from_file(Box::new(state_provider), &path)?
+                .into_iter().collect::<Result<Vec<_>>>()?;
+            let ext_ctx = revmc_sim_load::ExternalContext::from_fns(results);
+            let mut evm = revm::Evm::builder()
+                .with_db(db)
+                .with_external_context(ext_ctx)
+                .append_handler_register(revmc_sim_load::register_handler)
+                .build();
             return Ok(Box::new(move || {
                 evm.context.evm.env.tx = tx.clone();
                 let result = evm.transact().unwrap();

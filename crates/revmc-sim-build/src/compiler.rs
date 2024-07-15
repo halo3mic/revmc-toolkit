@@ -1,13 +1,16 @@
 use revmc::{
     llvm::inkwell::context::Context,
     EvmLlvmBackend, 
-    EvmCompiler, 
+    EvmCompiler,
+    EvmCompilerFn,
 };
-use revm::primitives::SpecId;
+use revm::primitives::{SpecId, B256};
 
 use eyre::{ensure, Ok, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::utils::{self, OptimizationLevelDeseralizable};
 
@@ -70,24 +73,24 @@ impl Default for CompilerOptions {
     }
 }
 
-impl Into<AOTCompiler> for CompilerOptions {
-    fn into(self) -> AOTCompiler {
-        AOTCompiler { opt: self }
+impl Into<Compiler> for CompilerOptions {
+    fn into(self) -> Compiler {
+        Compiler { opt: self }
     }
 }
 
 #[derive(Default)]
-pub struct AOTCompiler {
+pub struct Compiler {
     opt: CompilerOptions,
 }
 
-impl AOTCompiler {
+impl Compiler {
     
-    pub fn compile(&self, bytecode: &[u8]) -> Result<()> {    
+    pub fn compile_aot(&self, bytecode: &[u8]) -> Result<()> {    
         let name = utils::bytecode_hash_str(bytecode);
 
-        let ctx = Context::create();
-        let mut compiler = self.create_compiler(&ctx, &name)?;    
+        let ctx: &'static Context = Box::leak(Box::new(Context::create()));
+        let mut compiler = self.create_compiler(ctx, &name, true)?;    
         compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
@@ -99,11 +102,25 @@ impl AOTCompiler {
         // todo: if label exists link it to the bytecode hash
         Ok(())
     }
+
+    pub fn compile_jit(&self, bytecode: &[u8]) -> Result<JitCompileOut> {
+        let bytecode_hash = revm::primitives::keccak256(bytecode);
+        let name = bytecode_hash.to_string();
     
-    fn create_compiler<'a>(&self, ctx: &'a Context, name: &str) -> Result<EvmCompiler<EvmLlvmBackend<'a>>> {
+        let ctx: &'static Context = Box::leak(Box::new(Context::create())); // todo: better solution than leaking memory
+        let mut compiler = self.create_compiler(ctx, &name, false)?;
+        let fn_id = compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
+        let fnc = unsafe { compiler.jit_function(fn_id)? };
+        println!("Got function {:?}", fnc);
+        Box::leak(Box::new(compiler)); // todo: obv dont do that in prod - only for demo to avoid segmentation fault
+        
+        Ok((bytecode_hash, fnc))
+    }
+    
+    fn create_compiler(&self, ctx: &'static Context, name: &str, aot: bool) -> Result<EvmCompiler<EvmLlvmBackend<'static>>> {
         let target = self.create_target();
         let backend = EvmLlvmBackend::new_for_target(
-            ctx, true, self.opt.opt_level.clone().into(), &target
+            ctx, aot, self.opt.opt_level.clone().into(), &target
         )?;
         let mut compiler = EvmCompiler::new(backend);
     
@@ -160,3 +177,5 @@ impl AOTCompiler {
     }
 
 }
+
+pub type JitCompileOut = (B256, EvmCompilerFn);
