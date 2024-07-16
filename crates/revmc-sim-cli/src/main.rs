@@ -15,8 +15,8 @@ use reth_revm::database::StateProviderDatabase;
 use reth_evm_ethereum::EthEvmConfig;
 use reth_provider::ProviderFactory;
 use reth_evm::ConfigureEvmEnv;
-use reth_primitives::Block;
-use reth_db::DatabaseEnv;
+use reth_primitives::{Block, TransactionSigned};
+use reth_db::{Database, DatabaseEnv};
 
 use eyre::{Result, OptionExt};
 use std::time::Duration;
@@ -218,6 +218,10 @@ fn make_tx_sim(tx_hash: B256, run_type: RunType, config: &Config) -> Result<Box<
             }));
         },
         RunType::AOTCompiled => {
+            let tx_clone = tx.clone();
+            let fnc = move |evm: &mut EvmWithExtCtx| sim::sim_txs(&vec![tx_clone], evm).map(|_| ());
+            aot_compile_touched_contracts(db.clone(), &state_provider, Some(env.clone()), fnc)?;// todo avoid cloning
+
             let mut evm = utils::evm::create_evm(dir_path, db, Some(env), None)?;
             let tx = tx.clone();
             return Ok(Box::new(move || {
@@ -259,8 +263,8 @@ pub fn make_block_sim(block_num: u64, run_type: RunType) -> Result<Box<dyn FnMut
         .ok_or_eyre("No block found")?;
 
     let env = env_with_handler_cfg(provider_factory.chain_spec().chain.id(), &block);
-    let state_provider = provider_factory.history_by_block_number((block_num-1).into())?;
-    let db = CacheDB::new(StateProviderDatabase::new(state_provider));
+    let state_provider = Arc::new(provider_factory.history_by_block_number((block_num-1).into())?);
+    let db = CacheDB::new(StateProviderDatabase::new(state_provider.clone()));
 
     match run_type {
         RunType::Native => {
@@ -275,6 +279,10 @@ pub fn make_block_sim(block_num: u64, run_type: RunType) -> Result<Box<dyn FnMut
             }))
         },
         RunType::AOTCompiled => {
+            let txs = block.body.clone();
+            let fnc = move |evm: &mut EvmWithExtCtx| sim::sim_txs(&txs, evm).map(|_| ());
+            aot_compile_touched_contracts(db.clone(), &state_provider, Some(env.clone()), fnc)?;// todo avoid cloning
+
             let mut evm = utils::evm::create_evm(&dir_path_str, db, Some(env), None)?;
             return Ok(Box::new(move || {
                 let res = sim::sim_txs(&block.body, &mut evm)?;
@@ -283,6 +291,7 @@ pub fn make_block_sim(block_num: u64, run_type: RunType) -> Result<Box<dyn FnMut
             }))
         }, 
         RunType::JITCompiled => {
+            // todo
             todo!()
         }
     }
@@ -321,15 +330,13 @@ fn make_call_sim(call: Call, run_type: RunType, config: &Config) -> Result<Box<d
     make_call_fn(tx_env, run_type, db, state_provider, Some(dir_path))
 }
 
-fn make_call_fn<ExtDB: revm::Database + revm::DatabaseRef + 'static>(
+fn make_call_fn(
     tx: TxEnv,
     run_type: RunType,
-    db: CacheDB<ExtDB>,
+    db: CacheDB<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>,
     state_provider: Arc<impl StateProvider + ?Sized>,
     dir_path: Option<&str>, // todo: make this related to enum type instead
-) -> Result<Box<dyn FnMut() -> Result<ExecutionResult>>> 
-where <ExtDB as revm::DatabaseRef>::Error: std::fmt::Debug
-{
+) -> Result<Box<dyn FnMut() -> Result<ExecutionResult>>> {
     match run_type {
         RunType::Native => {
             let mut evm = revm::Evm::builder()
@@ -342,6 +349,14 @@ where <ExtDB as revm::DatabaseRef>::Error: std::fmt::Debug
             }));
         },
         RunType::AOTCompiled => {
+            let tx_clone = tx.clone();
+            let fnc = |evm: &mut EvmWithExtCtx| {
+                evm.context.evm.env.tx = tx_clone;
+                evm.transact()?;
+                Ok(())
+            };
+            aot_compile_touched_contracts(db.clone(), &Box::new(state_provider), None, fnc)?;// todo avoid cloning
+
             let dir_path = dir_path.ok_or_else(|| eyre::eyre!("Missing dir path"))?;
             let mut evm = utils::evm::create_evm(dir_path, db, None, None)?;
             return Ok(Box::new(move || {
@@ -388,3 +403,35 @@ fn block_env_from_block(block: &Block) -> BlockEnv {
     );
     block_env
 }
+
+fn aot_compile_touched_contracts<ExtDB: revm::Database + revm::DatabaseRef, F>(
+    db: CacheDB<ExtDB>,
+    state_provider: &Box<impl StateProvider + ?Sized>,
+    env: Option<EnvWithHandlerCfg>,
+    run_fn: F
+) -> Result<()> 
+where 
+    F: FnOnce(&mut revm::Evm<revmc_sim_load::ExternalContext, CacheDB<ExtDB>>) -> Result<()>,
+    <ExtDB as revm::DatabaseRef>::Error: std::fmt::Debug
+{
+    let mut evm = revm::Evm::builder()
+        .with_db(db)
+        .with_external_context(revmc_sim_load::ExternalContext::default())
+        .with_env_with_handler_cfg(env.unwrap_or_default())
+        .append_handler_register(revmc_sim_load::register_handler)
+        .build();
+
+    run_fn(&mut evm)?;
+    let touched_contracts = evm.context.external.touches
+        .expect("Expected at least one touch")
+        .into_iter()
+        .map(|(address, _counter)| address)
+        .collect::<Vec<Address>>();
+
+    utils::build::compile_aot_from_contracts(state_provider, &touched_contracts, None)? // todo: pass options
+        .into_iter().collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
+type EvmWithExtCtx<'a> = revm::Evm<'a, revmc_sim_load::ExternalContext, CacheDB<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>>;

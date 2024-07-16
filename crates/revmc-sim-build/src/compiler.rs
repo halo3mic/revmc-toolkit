@@ -86,14 +86,16 @@ pub struct Compiler {
 
 impl Compiler {
     
-    pub fn compile_aot(&self, bytecode: &[u8]) -> Result<()> {    
+    pub fn compile_aot(&self, bytecode: &[u8]) -> Result<()> {  
         let name = utils::bytecode_hash_str(bytecode);
+        println!("Compiling contract with name {}", name);  
 
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
         let mut compiler = self.create_compiler(ctx, &name, true)?;    
         compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
+        println!("Writing object file to {}", out_dir.display());
         let obj = Self::write_precompiled_obj(&mut compiler, &name, &out_dir)?;
         if !self.opt.no_link {
             Self::link(&obj, &out_dir)?;

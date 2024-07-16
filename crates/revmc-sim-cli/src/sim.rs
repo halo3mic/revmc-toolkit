@@ -12,9 +12,9 @@ use eyre::{OptionExt, Result};
 
 
 // modified code from reth's EthBundle::call_bundle
-pub fn sim_txs<EXT, ExtDB: DatabaseRef>(
+pub fn sim_txs<'a, EXT, ExtDB: DatabaseRef>(
     transactions: &Vec<TransactionSigned>,
-    evm: &mut Evm<'static, EXT, CacheDB<ExtDB>>,
+    evm: &mut Evm<'a, EXT, CacheDB<ExtDB>>,
 ) -> Result<EthCallBundleResponse> 
 where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
 {
