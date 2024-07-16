@@ -7,7 +7,7 @@ use revm::{
     db::CacheDB, 
     primitives::{
         EnvWithHandlerCfg, TxEnv, BlockEnv, CfgEnvWithHandlerCfg, 
-        SpecId, CfgEnv, B256
+        SpecId, CfgEnv, B256, Address
     }
 };
 use reth_provider::{BlockReader, ChainSpecProvider, TransactionsProvider};
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
             // todo: parse config path
             let state_provider = provider_factory.latest()?;
             let path = default_build_config_path()?;
-            utils::build::compile_aot_from_file(state_provider, &path)?
+            utils::build::compile_aot_from_file_path(&state_provider, &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
         }
         Commands::Run(run_args) => {
@@ -223,14 +223,15 @@ fn make_tx_sim(tx_hash: B256, run_type: RunType, config: &Config) -> Result<Box<
             return Ok(Box::new(move || {
                 let res = sim::sim_txs(&vec![tx.clone()], &mut evm)?;
                 // todo: check results are ok (eg. gas used)
+                // todo: check native touches are zero
                 Ok(())
             }))
         }, 
         RunType::JITCompiled => {
             let path = default_build_config_path()?; // todo pass as arg
-            let results = utils::build::compile_jit_from_file(Box::new(state_provider), &path)?
+            let results = utils::build::compile_jit_from_file_path(Box::new(state_provider), &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
-            let ext_ctx = revmc_sim_load::ExternalContext::from_fns(results);
+            let ext_ctx: revmc_sim_load::ExternalContext = results.into();
             let mut evm = revm::Evm::builder()
                 .with_db(db)
                 .with_external_context(ext_ctx)
@@ -351,9 +352,9 @@ where <ExtDB as revm::DatabaseRef>::Error: std::fmt::Debug
         }, 
         RunType::JITCompiled => {
             let path = default_build_config_path()?; // todo pass as arg
-            let results = utils::build::compile_jit_from_file(Box::new(state_provider), &path)?
+            let results = utils::build::compile_jit_from_file_path(Box::new(state_provider), &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
-            let ext_ctx = revmc_sim_load::ExternalContext::from_fns(results);
+            let ext_ctx: revmc_sim_load::ExternalContext = results.into();
             let mut evm = revm::Evm::builder()
                 .with_db(db)
                 .with_external_context(ext_ctx)

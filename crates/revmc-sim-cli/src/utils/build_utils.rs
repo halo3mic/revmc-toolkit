@@ -53,16 +53,28 @@ fn fetch_code_for_account(state_provider: &impl StateProvider, account: Address)
 }
 
 
-pub fn compile_contracts_aot(
-    state_provider: Box<impl StateProvider + ?Sized>,
+pub fn compile_aot_from_contracts(
+    state_provider: &Box<impl StateProvider + ?Sized>,
+    contracts: &[Address],
+    fallback_opt: Option<CompilerOptions>,
+) -> Result<Vec<Result<()>>> {
+    let contracts = contracts.iter().map(|&account| {
+        let code = fetch_code_for_account(state_provider, account)?;
+        Ok(CodeWithOptions { code, options: None })
+    }).collect::<Result<Vec<_>>>()?;
+    revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
+}
+
+pub fn compile_aot_from_build_file(
+    state_provider: &Box<impl StateProvider + ?Sized>,
     build_file: BuildFile,
 ) -> Result<Vec<Result<()>>> {
     // todo: pass on the label into config file
-    let (contracts, fconfig) = build_file.into_contracts_and_fconfig(&state_provider)?;
+    let (contracts, fconfig) = build_file.into_contracts_and_fconfig(state_provider)?;
     revmc_sim_build::compile_contracts_aot(contracts, fconfig)
 }
 
-pub fn compile_contracts_jit(
+pub fn compile_jit_from_build_file(
     state_provider: Box<impl StateProvider + ?Sized>,
     build_file: BuildFile,
 ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
@@ -111,23 +123,23 @@ impl BuildFile {
 
 }
 
-pub fn compile_aot_from_file(
-    state_provider: Box<impl StateProvider + ?Sized>,
+pub fn compile_aot_from_file_path(
+    state_provider: &Box<impl StateProvider + ?Sized>,
     file_path: &PathBuf,
 ) -> Result<Vec<Result<()>>> {
     let config_txt = std::fs::read_to_string(file_path)?;
     let build_file = serde_json::from_str(&config_txt)?;
-    compile_contracts_aot(state_provider, build_file)
+    compile_aot_from_build_file(state_provider, build_file)
 }
 
 // todo: duplicated logic from aot
-pub fn compile_jit_from_file(
+pub fn compile_jit_from_file_path(
     state_provider: Box<impl StateProvider + ?Sized>,
     file_path: &PathBuf,
 ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
     let config_txt = std::fs::read_to_string(file_path)?;
     let build_file = serde_json::from_str(&config_txt)?;
-    compile_contracts_jit(state_provider, build_file)
+    compile_jit_from_build_file(state_provider, build_file)
 }
 
 fn hex_or_vec<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
