@@ -1,26 +1,23 @@
-use reth_provider::{ReceiptProvider, StateProvider};
 use revm::{
-    db::CacheDB, 
     primitives::{
-        EnvWithHandlerCfg, TxEnv, BlockEnv, CfgEnvWithHandlerCfg, 
-        SpecId, CfgEnv, B256, Address, Bytes,
-    }
+        EnvWithHandlerCfg, TxEnv, BlockEnv, CfgEnvWithHandlerCfg, SpecId, 
+        CfgEnv, B256, Address, Bytes, AccountInfo, Bytecode, TransactTo, 
+        address, U256,
+    },
+    db::CacheDB,
 };
-use reth_provider::{BlockReader, ChainSpecProvider, TransactionsProvider};
-use reth_revm::database::StateProviderDatabase;
-use reth_evm_ethereum::EthEvmConfig;
-use reth_provider::ProviderFactory;
-use reth_evm::ConfigureEvmEnv;
+use reth_provider::{
+    ReceiptProvider, StateProvider, ProviderFactory, BlockReader, 
+    ChainSpecProvider, TransactionsProvider,
+};
 use reth_primitives::{Block, TransactionSigned};
+use reth_revm::database::StateProviderDatabase;
 use reth_db::DatabaseEnv;
-
-use eyre::{Result, OptionExt};
-use std::str::FromStr;
-
-use std::sync::Arc;
-
 use revmc::primitives::hex;
-use revm::primitives::{AccountInfo, Bytecode, TransactTo, address, U256};
+
+use std::{str::FromStr, sync::Arc};
+use eyre::{Result, OptionExt};
+
 
 use crate::utils;
 
@@ -294,6 +291,9 @@ fn env_with_handler_cfg(chain_id: u64, block: &Block) -> EnvWithHandlerCfg {
     let env = EnvWithHandlerCfg::new_with_cfg_env(cfg_env, block_env, TxEnv::default());
     env
 }
+
+use reth_evm_ethereum::EthEvmConfig;
+use reth_evm::ConfigureEvmEnv;
 
 // todo: do this myself or find a better way
 fn block_env_from_block(block: &Block) -> BlockEnv {
