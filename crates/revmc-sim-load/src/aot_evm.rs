@@ -65,8 +65,8 @@ impl From<Vec<(B256, (EvmCompilerFn, Library))>> for ExternalContext {
 
 #[derive(Default, Debug)]
 pub struct TouchCounter {
-    overall: usize,
-    non_native: usize,
+    pub overall: usize,
+    pub non_native: usize,
 }
 
 impl TouchCounter {
