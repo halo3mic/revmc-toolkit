@@ -4,34 +4,8 @@ use reth_provider::{
     providers::StaticFileProvider,
     ProviderFactory,
 };
-use revm::{Evm, db::CacheDB, primitives::{EnvWithHandlerCfg, B256}};
 use std::path::Path;
 use eyre::Result;
-
-use revmc_sim_load::{ExternalContext, self as loader};
-
-
-pub fn create_evm<ExtDB: revm::Database + revm::DatabaseRef>(
-    dir_path: &str,
-    db: CacheDB<ExtDB>, 
-    cfg_env: Option<EnvWithHandlerCfg>,
-    codehash_select: Option<Vec<B256>>,
-) -> Result<Evm<'static, ExternalContext, CacheDB<ExtDB>>> {
-    let external_ctx = loader::build_external_context(dir_path, codehash_select)?;
-    let evm = revm::Evm::builder()
-        .with_db(db)
-        .with_external_context(external_ctx);
-    if let Some(cfg_env) = cfg_env {
-        Ok(evm
-            .with_env_with_handler_cfg(cfg_env)
-            .append_handler_register(loader::register_handler)
-            .build())
-    } else {
-        Ok(evm
-            .append_handler_register(loader::register_handler)
-            .build())
-    }
-}
 
 
 pub fn make_provider_factory(db_path: &str) -> Result<ProviderFactory<DatabaseEnv>> {
@@ -44,4 +18,3 @@ pub fn make_provider_factory(db_path: &str) -> Result<ProviderFactory<DatabaseEn
 
     Ok(factory)
 }
-

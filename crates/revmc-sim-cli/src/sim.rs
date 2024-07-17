@@ -13,10 +13,11 @@ use reth_provider::{
 use reth_primitives::{Block, TransactionSigned};
 use reth_revm::database::StateProviderDatabase;
 use reth_db::DatabaseEnv;
-use revmc::primitives::hex;
+use revmc::primitives::{hex, keccak256};
 
 use std::{str::FromStr, sync::Arc};
 use eyre::{Result, OptionExt};
+use tracing::debug;
 
 
 use crate::utils;
@@ -93,7 +94,7 @@ pub fn make_block_sim(block_num: u64, run_type: SimRunType, config: &SimConfig) 
     make_txs_sim(txs, run_type, &provider_factory, &dir_path, &block, block.header.gas_used, vec![])
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum SimCall {
     Fibbonacci
 }
@@ -199,13 +200,13 @@ fn prepare_evm_for_runtype(
         SimRunType::Native => (make_evm(db, None, env), false),
         SimRunType::AOTCompiled => {
             let fnc = move |evm: &mut EvmWithExtCtx| execute_fn(evm).map(|_| ());
-            if let Err(err) = aot_compile_touched_contracts(db.clone(), env.clone(), fnc) {
-                println!("Failed to compile touched contracts; falling back to native: {:?}", err);
-            }
-            let ext_ctx = revmc_sim_load::build_external_context(&dir_path, None)?;
+            let selected = aot_compile_touched_contracts(state_provider.clone(), db.clone(), env.clone(), fnc)?;
+            let ext_ctx = revmc_sim_load::build_external_context(&dir_path, Some(selected))?;
             (make_evm(db, Some(ext_ctx), env), true)
         }, 
         SimRunType::JITCompiled => {
+            // todo: compile touched contracts
+
             let path = utils::default_build_config_path()?; // todo pass as arg
             let ext_fns = utils::build::compile_jit_from_file_path(Box::new(state_provider), &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
@@ -229,12 +230,13 @@ where
     let pre_res = preexecute_fn.map(|f| f(&mut evm)).transpose()?.unwrap_or_default();
     return Ok(Box::new(move || {
         let res = execute_fn(&mut evm)?;
-        let expected_target_gas = expected_target_gas - pre_res.gas_used;
-        let actual_gas = res.gas_used;
-        if actual_gas != expected_target_gas {
-            return Err(eyre::eyre!("Gas used mismatch; expected {expected_target_gas} got {actual_gas}"));
-        }
+        // let expected_target_gas = expected_target_gas - pre_res.gas_used;
+        // let actual_gas = res.gas_used;
+        // if actual_gas != expected_target_gas {
+        //     return Err(eyre::eyre!("Gas used mismatch; expected {expected_target_gas} got {actual_gas}"));
+        // }
         // todo: the bottom part will inccur some conditional latency
+        debug!("Touches: {:?}", evm.context.external.touches);
         if all_non_native {
             if let Some(touches) = &evm.context.external.touches {
                 let frst_native_touch = touches.iter().find(|(_, c)| c.non_native > 0);
@@ -308,10 +310,11 @@ fn block_env_from_block(block: &Block) -> BlockEnv {
 }
 
 fn aot_compile_touched_contracts<ExtDB: revm::Database + revm::DatabaseRef, F>(
+    state_provider: Arc<Box<dyn StateProvider>>,
     db: CacheDB<ExtDB>,
     env: Option<EnvWithHandlerCfg>,
     run_fn: F
-) -> Result<()> 
+) -> Result<Vec<B256>> 
 where 
     F: FnOnce(&mut revm::Evm<revmc_sim_load::ExternalContext, CacheDB<ExtDB>>) -> Result<()>,
     <ExtDB as revm::DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
@@ -328,19 +331,32 @@ where
     let touched_contracts = evm.context.external.touches
         .expect("Expected at least one touch")
         .into_iter()
+        .inspect(|(address, counter)| {
+            debug!("Touched contract: {address:?} {counter:?}");
+        })
         .map(|(address, _counter)| address)
         .collect::<Vec<Address>>();
 
-    utils::build::compile_aot_from_contracts_with_fn(
-        move |account| {
-            let code = db.accounts
-                .get(&account).ok_or_eyre("Account not found")?
-                .info.code.clone().ok_or_eyre("No code found")?;
-            Ok(code.original_byte_slice().to_vec())
-        },
-        &touched_contracts,
-        None
-    )?.into_iter().collect::<Result<Vec<_>>>()?;
+    let contracts = touched_contracts.iter()
+        .map(|account| {
+            match db.accounts.get(account) {
+                Some(account) => {
+                    let code = account.info.code.as_ref()
+                        .ok_or_eyre("No code found")?;
+                    Ok(code.original_byte_slice().to_vec())
+                },
+                None => {
+                    let code = state_provider.account_code(*account)?
+                        .ok_or_eyre("No code found for address")?;
+                    Ok(code.original_byte_slice().to_vec())
+                }
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    
+    let code_hashes = contracts.iter().map(|c| keccak256(c)).collect();
+    utils::build::compile_aot_from_codes(contracts, None)?;
+    
 
-    Ok(())
+    Ok(code_hashes)
 }

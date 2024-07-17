@@ -1,8 +1,6 @@
 mod utils;
 mod compiler;
 
-use revm::primitives::B256;
-use revmc::EvmCompilerFn;
 use serde::{Deserialize, Deserializer};
 use std::path::PathBuf;
 use serde_json::Value;

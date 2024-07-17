@@ -3,6 +3,7 @@ mod cli;
 mod sim;
 
 use std::{time::Duration, str::FromStr, sync::Arc};
+use tracing::{info, span, Level};
 use criterion::Criterion;
 use cli::{Cli, Commands};
 use clap::Parser;
@@ -13,7 +14,9 @@ use sim::{SimCall, SimConfig, SimRunType};
 
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
     dotenv::dotenv().ok();
+
     let db_path = std::env::var("RETH_DB_PATH")?;
     let dir_path = std::env::current_dir()?.join(".data");
     let dir_path = dir_path.to_string_lossy().to_string();
@@ -26,96 +29,115 @@ fn main() -> Result<()> {
             // todo: parse config path
             let state_provider = config.provider_factory.latest()?;
             let path = utils::default_build_config_path()?;
+            info!("Compiling AOT from config file: {:?}", path);
+            let span = span!(Level::INFO, "build");
+            let _guard = span.enter();
             utils::build::compile_aot_from_file_path(&state_provider, &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
         }
         Commands::Run(run_args) => {
             let run_type = run_args.run_type.parse::<SimRunType>()?;
-            println!("Run type: {:?}", run_type);
+            info!("Running sim for type: {:?}", run_type);
             if let Some(tx_hash) = run_args.tx_hash {
                 let tx_hash = B256::from_str(&tx_hash)?;
-                println!("Running sim for tx: {:?}", tx_hash);
+                info!("Running sim for tx: {tx_hash:?}");
                 sim::run_tx_sim(tx_hash, run_type, &config)?;
             } else if let Some(block_num) = run_args.block_num {
                 let block_num = block_num.parse::<u64>()?;
-                println!("Running sim for block: {block_num:?}");
+                info!("Running sim for block: {block_num:?}");
                 sim::run_block_sim(block_num, run_type, &config)?;
             } else {
-                println!("Running sim for call"); // todo: different call opt
-                sim::run_call_sim(SimCall::Fibbonacci, run_type, &config)?;
+                let call_type = SimCall::Fibbonacci; // todo: different call opt
+                info!("Running sim for call: {call_type:?}");
+                sim::run_call_sim(call_type, run_type, &config)?;
             }
         }
         Commands::Bench(bench_args) => {
+            info!("Running benches");
             // todo: how many iters
             if let Some(tx_hash) = bench_args.tx_hash {
                 let tx_hash = B256::from_str(&tx_hash)?;
+                info!("Running bench for tx: {tx_hash:?}");
                 run_tx_benchmarks(tx_hash, &config)?;
             } else if let Some(block_num) = bench_args.block_num {
                 let block_num = block_num.parse::<u64>()?;
+                info!("Running bench for block: {block_num:?}");
                 run_block_benchmarks(block_num, &config)?;
             } else {
-                // todo: call type in args
+                let call_type = SimCall::Fibbonacci; // todo: different call opt
+                info!("Running bench for call: {call_type:?}");
                 run_call_benchmarks(SimCall::Fibbonacci, &config)?;
             }
         }
     }
-    
     Ok(())
 
 }
 
 fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
+    let span = span!(Level::INFO, "bench_tx");
+    let _guard = span.enter();
+    info!("TxHash: {:?}", tx_hash);
     let mut criterion = Criterion::default()
         .sample_size(200)
         .measurement_time(Duration::from_secs(30));
 
-    let mut fn_jit = sim::make_tx_sim(tx_hash, SimRunType::JITCompiled, config)?;
-    criterion.bench_function("sim_tx_jit_compiled", |b| {
-        b.iter(|| { fn_jit() })
-    });
-
-    let mut fn_aot = sim::make_tx_sim(tx_hash, SimRunType::AOTCompiled, config)?;
-    criterion.bench_function("sim_tx_aot_compiled", |b| {
-        b.iter(|| { fn_aot() })
-    });
-
-    let mut fn_native = sim::make_tx_sim(tx_hash, SimRunType::Native, config)?;
-    criterion.bench_function("sim_tx_native", |b| {
-        b.iter(|| { fn_native() })
-    });
-
+    for (symbol, run_type) in [
+        ("jit", SimRunType::JITCompiled),
+        ("aot", SimRunType::AOTCompiled),
+        ("native", SimRunType::Native),
+    ] {
+        info!("Running {}", symbol.to_uppercase());
+        let mut fnc = sim::make_tx_sim(tx_hash, run_type, config)?;
+        criterion.bench_function(&format!("sim_tx_{symbol}"), |b| {
+            b.iter(|| { fnc() })
+        });
+    }
     Ok(())
 }
 
 fn run_block_benchmarks(block_num: u64, config: &SimConfig) -> Result<()> {
+    let span = span!(Level::INFO, "bench_block");
+    let _guard = span.enter();
+    info!("Block: {:?}", block_num);
     let mut criterion = Criterion::default()
         .sample_size(10)
-        .measurement_time(Duration::from_secs(20));
+        .measurement_time(Duration::from_secs(5));
 
-    unimplemented!(); // todo: implement block benchmarks
-
+    for (symbol, run_type) in [
+        ("jit", SimRunType::JITCompiled),
+        ("aot", SimRunType::AOTCompiled),
+        ("native", SimRunType::Native),
+    ] {
+        info!("Running {}", symbol.to_uppercase());
+        let mut fnc = sim::make_block_sim(block_num, run_type, config)?;
+        criterion.bench_function(&format!("sim_block_{symbol}"), |b| {
+            b.iter(|| { fnc() })
+        });
+    }
     Ok(())
 }
 
 fn run_call_benchmarks(call: SimCall, config: &SimConfig) -> Result<()> {
+    let span = span!(Level::INFO, "bench_call");
+    let _guard = span.enter();
+    info!("Call: {:?}", call);
     let mut criterion = Criterion::default()
         .sample_size(200)
         .measurement_time(Duration::from_secs(30));
-
-    let mut fn_jit = sim::make_call_sim(call, SimRunType::JITCompiled, config)?;
-    criterion.bench_function("sim_call_jit", |b| {
-        b.iter(|| { fn_jit() })
-    });
-
-    let mut fn_aot = sim::make_call_sim(call, SimRunType::AOTCompiled, config)?;
-    criterion.bench_function("sim_call_aot_compiled", |b| {
-        b.iter(|| { fn_aot() })
-    });
-
-    let mut fn_native = sim::make_call_sim(call, SimRunType::Native, config)?;
-    criterion.bench_function("sim_call_native", |b| {
-        b.iter(|| { fn_native() })
-    });
-
+    let mut group = criterion.benchmark_group("call_benchmarks");
+    
+    for (symbol, run_type) in [
+        ("jit", SimRunType::JITCompiled),
+        ("aot", SimRunType::AOTCompiled),
+        ("native", SimRunType::Native),
+    ] {
+        info!("Running {}", symbol.to_uppercase());
+        let mut fnc = sim::make_call_sim(call, run_type, config)?;
+        group.bench_function(&format!("sim_call_{symbol}"), |b| {
+            b.iter(|| { fnc() })
+        });
+    }
+    group.finish();
     Ok(())
 }

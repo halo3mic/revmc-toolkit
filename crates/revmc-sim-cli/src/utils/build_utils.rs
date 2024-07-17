@@ -10,78 +10,64 @@ use serde_json::Value;
 
 use eyre::{OptionExt, Result};
 
-// #[derive(Debug, Clone, serde::Deserialize)]
-// pub struct CompileArgsWithAddress {
-//     pub address: Option<Address>,
-//     pub options: Option<CompilerOptions>,
+
+pub fn compile_aot_from_codes(
+    codes: Vec<Vec<u8>>,
+    fallback_opt: Option<CompilerOptions>,
+) -> Result<Vec<Result<()>>>
+{
+    let contracts = codes.into_iter().map(|c| c.into()).collect();
+    revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
+}
+
+// pub fn compile_aot_from_contracts_with_fn<F>(
+//     account_to_code_fn: F,
+//     contracts: &[Address],
+//     fallback_opt: Option<CompilerOptions>,
+// ) -> Result<Vec<Result<()>>> 
+// where F: Fn(Address) -> Result<Vec<u8>> {
+//     let contracts = contracts.iter().map(|&account| {
+//         let code = account_to_code_fn(account)?;
+//         Ok(CodeWithOptions { code, options: None })
+//     }).collect::<Result<Vec<_>>>()?;
+//     revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
 // }
 
-// impl CompileArgsWithAddress {
-
-//     fn new(address: Address) -> Self {
-//         Self { address, options: None }
-//     }
-
-//     fn into_code_with_opt(self, state_provider: &impl StateProvider) -> Result<CodeWithOptions> {
-//         let code = state_provider.account_code(self.address)?
-//             .ok_or_eyre("No code found for address")?;
-//         let code_bytes = code.original_byte_slice().to_vec();
-//         Ok(CodeWithOptions {
-//             code: code_bytes,
-//             options: self.options,
-//         })
-//     }
-// }
-
-// pub fn compile_contracts_with_address(
-//     state_provider: Box<impl StateProvider + ?Sized>,
-//     contracts: impl IntoIterator<Item=CompileArgsWithAddress>,
+// pub fn compile_aot_from_contracts(
+//     state_provider: &Box<impl StateProvider + ?Sized>,
+//     contracts: &[Address],
 //     fallback_opt: Option<CompilerOptions>,
 // ) -> Result<Vec<Result<()>>> {
-//     let contracts = contracts.into_iter()
-//         .map(|c| c.into_code_with_opt(&state_provider))
-//         .collect::<Result<Vec<_>>>()?;
-//     revmc_sim_build::compile_contracts(contracts, fallback_opt)
-//     // todo: check all processes are ok
+//     compile_aot_from_contracts_with_fn(
+//         |account| fetch_code_for_account(state_provider, account),
+//         contracts,
+//         fallback_opt,
+//     )
 // }
 
-fn fetch_code_for_account(state_provider: &impl StateProvider, account: Address) -> Result<Vec<u8>> {
-    let code = state_provider.account_code(account)?
-        .ok_or_eyre("No code found for address")?;
-    let code_bytes = code.original_byte_slice().to_vec();
-    Ok(code_bytes)
-}
-
-pub fn compile_aot_from_contracts_with_fn<F>(
-    account_to_code_fn: F,
-    contracts: &[Address],
-    fallback_opt: Option<CompilerOptions>,
-) -> Result<Vec<Result<()>>> 
-where F: Fn(Address) -> Result<Vec<u8>> {
-    let contracts = contracts.iter().map(|&account| {
-        let code = account_to_code_fn(account)?;
-        Ok(CodeWithOptions { code, options: None })
-    }).collect::<Result<Vec<_>>>()?;
-    revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
-}
-
-pub fn compile_aot_from_contracts(
+pub fn compile_aot_from_file_path(
     state_provider: &Box<impl StateProvider + ?Sized>,
-    contracts: &[Address],
-    fallback_opt: Option<CompilerOptions>,
+    file_path: &PathBuf,
 ) -> Result<Vec<Result<()>>> {
-    let contracts = contracts.iter().map(|&account| {
-        let code = fetch_code_for_account(state_provider, account)?;
-        Ok(CodeWithOptions { code, options: None })
-    }).collect::<Result<Vec<_>>>()?;
-    revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
+    let config_txt = std::fs::read_to_string(file_path)?;
+    let build_file = serde_json::from_str(&config_txt)?;
+    compile_aot_from_build_file(state_provider, build_file)
+}
+
+// todo: duplicated logic from aot
+pub fn compile_jit_from_file_path(
+    state_provider: Box<impl StateProvider + ?Sized>,
+    file_path: &PathBuf,
+) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
+    let config_txt = std::fs::read_to_string(file_path)?;
+    let build_file = serde_json::from_str(&config_txt)?;
+    compile_jit_from_build_file(state_provider, build_file)
 }
 
 pub fn compile_aot_from_build_file(
     state_provider: &Box<impl StateProvider + ?Sized>,
     build_file: BuildFile,
 ) -> Result<Vec<Result<()>>> {
-    // todo: pass on the label into config file
     let (contracts, fconfig) = build_file.into_contracts_and_fconfig(state_provider)?;
     revmc_sim_build::compile_contracts_aot(contracts, fconfig)
 }
@@ -90,7 +76,6 @@ pub fn compile_jit_from_build_file(
     state_provider: Box<impl StateProvider + ?Sized>,
     build_file: BuildFile,
 ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
-    // todo: pass on the label into config file
     let (contracts, fconfig) = build_file.into_contracts_and_fconfig(&state_provider)?;
     revmc_sim_build::compile_contracts_jit(contracts, fconfig)
 }
@@ -101,7 +86,7 @@ pub struct BuildObject {
     #[serde(default, deserialize_with = "hex_or_vec")]
     pub code: Option<Vec<u8>>,
     pub options: Option<CompilerOptions>,
-    pub label: Option<String>,
+    pub _label: Option<String>, // todo: label servers no purpose
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -135,23 +120,11 @@ impl BuildFile {
 
 }
 
-pub fn compile_aot_from_file_path(
-    state_provider: &Box<impl StateProvider + ?Sized>,
-    file_path: &PathBuf,
-) -> Result<Vec<Result<()>>> {
-    let config_txt = std::fs::read_to_string(file_path)?;
-    let build_file = serde_json::from_str(&config_txt)?;
-    compile_aot_from_build_file(state_provider, build_file)
-}
-
-// todo: duplicated logic from aot
-pub fn compile_jit_from_file_path(
-    state_provider: Box<impl StateProvider + ?Sized>,
-    file_path: &PathBuf,
-) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
-    let config_txt = std::fs::read_to_string(file_path)?;
-    let build_file = serde_json::from_str(&config_txt)?;
-    compile_jit_from_build_file(state_provider, build_file)
+fn fetch_code_for_account(state_provider: &impl StateProvider, account: Address) -> Result<Vec<u8>> {
+    let code = state_provider.account_code(account)?
+        .ok_or_eyre("No code found for address")?;
+    let code_bytes = code.original_byte_slice().to_vec();
+    Ok(code_bytes)
 }
 
 fn hex_or_vec<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
@@ -174,5 +147,3 @@ where
         None => Ok(None),
     }
 }
-
-// todo: load utils?

@@ -63,6 +63,7 @@ impl From<Vec<(B256, (EvmCompilerFn, Library))>> for ExternalContext {
     }
 }
 
+// todo: track gas consumption
 #[derive(Default, Debug)]
 pub struct TouchCounter {
     pub overall: usize,

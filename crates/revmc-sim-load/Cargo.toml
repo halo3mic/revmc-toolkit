@@ -9,3 +9,4 @@ revmc.workspace = true
 revm.workspace = true
 eyre.workspace = true
 libloading.workspace = true
+tracing = "0.1.40"

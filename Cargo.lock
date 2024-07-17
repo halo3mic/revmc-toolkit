@@ -3524,6 +3524,7 @@ dependencies = [
  "revmc",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -3556,6 +3557,8 @@ dependencies = [
  "revmc-sim-load",
  "serde",
  "serde_json",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3566,6 +3569,7 @@ dependencies = [
  "libloading",
  "revm",
  "revmc",
+ "tracing",
 ]
 
 [[package]]

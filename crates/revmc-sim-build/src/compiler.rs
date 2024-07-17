@@ -9,11 +9,12 @@ use revm::primitives::{SpecId, B256};
 use eyre::{ensure, Ok, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::Arc;
+use tracing::debug;
 
 use crate::utils::{self, OptimizationLevelDeseralizable};
 
+
+pub type JitCompileOut = (B256, EvmCompilerFn);
 
 /**
  * Performance considerations:
@@ -48,12 +49,12 @@ impl CompilerOptions {
             target: "native".to_string(),
             target_cpu: None,
             target_features: None,
-            no_gas: true, // todo try true for performance
-            no_len_checks: true, // todo try true for performance
+            no_gas: true,
+            no_len_checks: true,
             frame_pointers: false,
             debug_assertions: false,
             no_link: false,
-            opt_level: OptimizationLevelDeseralizable::Aggressive, // todo: try aggresive
+            opt_level: OptimizationLevelDeseralizable::Aggressive,
             spec_id: SpecId::CANCUN, // ! EOF yet not implemented
             label: None,
         }
@@ -88,33 +89,32 @@ impl Compiler {
     
     pub fn compile_aot(&self, bytecode: &[u8]) -> Result<()> {  
         let name = utils::bytecode_hash_str(bytecode);
-        println!("Compiling contract with name {}", name);  
+        debug!("Compiling AOT contract with name {}", name);  
 
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
         let mut compiler = self.create_compiler(ctx, &name, true)?;    
         compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
-        println!("Writing object file to {}", out_dir.display());
+        debug!("Writing object file to {}", out_dir.display());
         let obj = Self::write_precompiled_obj(&mut compiler, &name, &out_dir)?;
         if !self.opt.no_link {
             Self::link(&obj, &out_dir)?;
         }
-    
-        // todo: if label exists link it to the bytecode hash
         Ok(())
     }
 
+    // todo: same compiler can be used for multiple JIT compilations - just one needs to be leaked instead of many
     pub fn compile_jit(&self, bytecode: &[u8]) -> Result<JitCompileOut> {
         let bytecode_hash = revm::primitives::keccak256(bytecode);
         let name = bytecode_hash.to_string();
+        debug!("Compiling JIT contract with name {}", name);
     
         let ctx: &'static Context = Box::leak(Box::new(Context::create())); // todo: better solution than leaking memory
         let mut compiler = self.create_compiler(ctx, &name, false)?;
         let fn_id = compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
         let fnc = unsafe { compiler.jit_function(fn_id)? };
-        println!("Got function {:?}", fnc);
-        Box::leak(Box::new(compiler)); // todo: obv dont do that in prod - only for demo to avoid segmentation fault
+        Box::leak(Box::new(compiler)); // ! BAD PRACTICE (LEAKING MEMORY) - only for demo to avoid segmentation fault
         
         Ok((bytecode_hash, fnc))
     }
@@ -151,7 +151,7 @@ impl Compiler {
         out_dir: &PathBuf,
     ) -> Result<PathBuf> {
         let obj = out_dir.join(label).with_extension("o");
-        println!("Writing object file to {}", obj.display());
+        debug!("Writing object file to {}", obj.display());
         compiler.write_object_to_file(&obj)?;
         if !obj.exists() {
             return Err(eyre::eyre!("Failed to compile object file"));
@@ -164,7 +164,7 @@ impl Compiler {
         revmc::Linker::new()
             .link(&so, [obj.to_str().unwrap()])?;
         ensure!(so.exists(), "Failed to link object file");
-        eprintln!("Linked shared object file to {}", so.display());
+        debug!("Linked shared object file to {}", so.display());
         Ok(())
     }
 
@@ -179,5 +179,3 @@ impl Compiler {
     }
 
 }
-
-pub type JitCompileOut = (B256, EvmCompilerFn);
