@@ -17,10 +17,9 @@ use revmc::primitives::{hex, keccak256};
 
 use std::{str::FromStr, sync::Arc};
 use eyre::{Result, OptionExt};
-use tracing::debug;
-
 
 use crate::utils;
+
 
 pub struct SimConfig {
     pub provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
@@ -36,7 +35,7 @@ impl SimConfig {
 #[derive(Debug)]
 pub enum SimRunType {
     Native,
-    AOTCompiled,
+    AOTCompiled { dir_path: String },
     JITCompiled,
 }
 
@@ -46,8 +45,13 @@ impl FromStr for SimRunType {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             "native" => Ok(SimRunType::Native),
-            "aot_compiled" => Ok(SimRunType::AOTCompiled),
             "jit_compiled" => Ok(SimRunType::JITCompiled),
+            "aot_compiled" => {
+                let dir_path = utils::default_build_config_path()?
+                    .to_string_lossy()
+                    .to_string();
+                Ok(SimRunType::AOTCompiled { dir_path })
+            },
             _ => Err(eyre::eyre!("Invalid run type")),
         }
     }
@@ -66,7 +70,7 @@ pub fn run_call_sim(call: SimCall, run_type: SimRunType, config: &SimConfig) -> 
 }
 
 pub fn make_tx_sim(tx_hash: B256, run_type: SimRunType, config: &SimConfig) -> Result<Box<dyn FnMut() -> Result<()>>> {
-    let SimConfig { provider_factory, dir_path } = config;
+    let SimConfig { provider_factory, .. } = config;
 
     let (tx, meta) = provider_factory.
         transaction_by_hash_with_meta(tx_hash)?
@@ -80,18 +84,18 @@ pub fn make_tx_sim(tx_hash: B256, run_type: SimRunType, config: &SimConfig) -> R
         .unwrap_or_default();
     let txs = Arc::new(vec![tx]);
 
-    make_txs_sim(txs, run_type, provider_factory, &dir_path, &block, exepected_gas_used, pre_execution_txs)
+    make_txs_sim(txs, run_type, provider_factory, &block, exepected_gas_used, pre_execution_txs)
 }
 
 pub fn make_block_sim(block_num: u64, run_type: SimRunType, config: &SimConfig) -> Result<Box<dyn FnMut() -> Result<()>>> {
-    let SimConfig { provider_factory, dir_path } = config;
+    let SimConfig { provider_factory, .. } = config;
 
     let block = provider_factory
         .block(block_num.into())?
         .ok_or_eyre("No block found")?;
     let txs = Arc::new(block.body.clone());
 
-    make_txs_sim(txs, run_type, &provider_factory, &dir_path, &block, block.header.gas_used, vec![])
+    make_txs_sim(txs, run_type, &provider_factory, &block, block.header.gas_used, vec![])
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -104,7 +108,7 @@ const FIBONACCI_CODE: &[u8] =
 
 
 pub fn make_call_sim(call: SimCall, run_type: SimRunType, config: &SimConfig) -> Result<Box<dyn FnMut() -> Result<()>>> {
-    let SimConfig { provider_factory, dir_path } = config;
+    let SimConfig { provider_factory, .. } = config;
     let state_provider = Arc::new(provider_factory.latest()?);
     let mut db = CacheDB::new(StateProviderDatabase::new(state_provider.clone()));
     
@@ -143,7 +147,6 @@ pub fn make_call_sim(call: SimCall, run_type: SimRunType, config: &SimConfig) ->
         run_type, 
         state_provider,
         db,
-        &dir_path, 
         execute_fn.clone(), 
         None,
     )?;
@@ -162,7 +165,6 @@ fn make_txs_sim(
     txs: Arc<Vec<TransactionSigned>>, 
     run_type: SimRunType, 
     provider_factory: &Arc<ProviderFactory<DatabaseEnv>>, 
-    dir_path: &str, // todo include this in RunType enum
     block: &Block, 
     exepected_gas_used: u64, 
     pre_execution_txs: Vec<TransactionSigned>,
@@ -181,7 +183,6 @@ fn make_txs_sim(
         run_type,
         state_provider,
         db, 
-        dir_path, 
         execute_fn.clone(), 
         Some(env),
     )?;
@@ -192,24 +193,20 @@ fn prepare_evm_for_runtype(
     run_type: SimRunType,
     state_provider: Arc<Box<dyn StateProvider>>,
     db: CacheDB<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>,
-    dir_path: &str, 
     execute_fn: impl Fn(&mut EvmWithExtCtx) -> Result<MyExecutionResult> + 'static,
     env: Option<EnvWithHandlerCfg>,
 ) -> Result<(EvmWithExtCtx<'static>, bool)> {
     let (evm, all_non_native) = match run_type {
         SimRunType::Native => (make_evm(db, None, env), false),
-        SimRunType::AOTCompiled => {
+        SimRunType::AOTCompiled { dir_path } => {
             let fnc = move |evm: &mut EvmWithExtCtx| execute_fn(evm).map(|_| ());
-            let selected = aot_compile_touched_contracts(state_provider.clone(), db.clone(), env.clone(), fnc)?;
+            let selected = aot_compile_touched_contracts(state_provider.clone(), db.clone(), env.clone(), fnc)?; // todo: avoid cloning!
             let ext_ctx = revmc_sim_load::build_external_context(&dir_path, Some(selected))?;
             (make_evm(db, Some(ext_ctx), env), true)
         }, 
         SimRunType::JITCompiled => {
-            // todo: compile touched contracts
-
-            let path = utils::default_build_config_path()?; // todo pass as arg
-            let ext_fns = utils::build::compile_jit_from_file_path(Box::new(state_provider), &path)?
-                .into_iter().collect::<Result<Vec<_>>>()?;
+            let fnc = move |evm: &mut EvmWithExtCtx| execute_fn(evm).map(|_| ());
+            let ext_fns = jit_compile_touched_contracts(state_provider.clone(), db.clone(), env.clone(), fnc)?; // todo: avoid cloning!
             (make_evm(db, Some(ext_fns.into()), env), true)
         }
     };
@@ -230,13 +227,15 @@ where
     let pre_res = preexecute_fn.map(|f| f(&mut evm)).transpose()?.unwrap_or_default();
     return Ok(Box::new(move || {
         let res = execute_fn(&mut evm)?;
-        // let expected_target_gas = expected_target_gas - pre_res.gas_used;
-        // let actual_gas = res.gas_used;
-        // if actual_gas != expected_target_gas {
-        //     return Err(eyre::eyre!("Gas used mismatch; expected {expected_target_gas} got {actual_gas}"));
-        // }
+        if !res.success {
+            return Err(eyre::eyre!("Execution failed"));
+        }
+        let expected_target_gas = expected_target_gas - pre_res.gas_used;
+        let actual_gas = res.gas_used;
+        if actual_gas != expected_target_gas {
+            return Err(eyre::eyre!("Gas used mismatch; expected {expected_target_gas} got {actual_gas}"));
+        }
         // todo: the bottom part will inccur some conditional latency
-        debug!("Touches: {:?}", evm.context.external.touches);
         if all_non_native {
             if let Some(touches) = &evm.context.external.touches {
                 let frst_native_touch = touches.iter().find(|(_, c)| c.non_native > 0);
@@ -297,7 +296,7 @@ fn env_with_handler_cfg(chain_id: u64, block: &Block) -> EnvWithHandlerCfg {
 use reth_evm_ethereum::EthEvmConfig;
 use reth_evm::ConfigureEvmEnv;
 
-// todo: do this myself or find a better way
+// todo: Fill block env in simpler way with less imports
 fn block_env_from_block(block: &Block) -> BlockEnv {
     let mut block_env = BlockEnv::default();
     let eth_evm_cfg = EthEvmConfig::default();
@@ -320,6 +319,40 @@ where
     <ExtDB as revm::DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
     ExtDB: Clone,
 {
+    let contracts = record_touched_bytecode(state_provider, db.clone(), env.clone(), run_fn)?;
+    let hashes = hash_bytecodes(&contracts);
+    utils::build::compile_aot_from_codes(contracts, None)?
+        .into_iter().collect::<Result<Vec<_>>>()?;
+    Ok(hashes)
+}
+
+fn jit_compile_touched_contracts<ExtDB: revm::Database + revm::DatabaseRef, F>(
+    state_provider: Arc<Box<dyn StateProvider>>,
+    db: CacheDB<ExtDB>,
+    env: Option<EnvWithHandlerCfg>,
+    run_fn: F
+) -> Result<Vec<(B256, revmc::EvmCompilerFn)>>
+where 
+    F: FnOnce(&mut revm::Evm<revmc_sim_load::ExternalContext, CacheDB<ExtDB>>) -> Result<()>,
+    <ExtDB as revm::DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
+    ExtDB: Clone,
+{
+    let contracts = record_touched_bytecode(state_provider, db.clone(), env.clone(), run_fn)?;
+    utils::build::compile_jit_from_codes(contracts, None)?
+        .into_iter().collect::<Result<Vec<_>>>()
+}
+
+fn record_touched_bytecode<ExtDB: revm::Database + revm::DatabaseRef, F>(
+    state_provider: Arc<Box<dyn StateProvider>>,
+    db: CacheDB<ExtDB>,
+    env: Option<EnvWithHandlerCfg>,
+    run_fn: F
+) -> Result<Vec<Vec<u8>>> 
+where 
+    F: FnOnce(&mut revm::Evm<revmc_sim_load::ExternalContext, CacheDB<ExtDB>>) -> Result<()>,
+    <ExtDB as revm::DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
+    ExtDB: Clone,
+{
     let mut evm = revm::Evm::builder()
         .with_db(db.clone())
         .with_external_context(revmc_sim_load::ExternalContext::default())
@@ -331,9 +364,6 @@ where
     let touched_contracts = evm.context.external.touches
         .expect("Expected at least one touch")
         .into_iter()
-        .inspect(|(address, counter)| {
-            debug!("Touched contract: {address:?} {counter:?}");
-        })
         .map(|(address, _counter)| address)
         .collect::<Vec<Address>>();
 
@@ -353,10 +383,10 @@ where
             }
         })
         .collect::<Result<Vec<_>>>()?;
-    
-    let code_hashes = contracts.iter().map(|c| keccak256(c)).collect();
-    utils::build::compile_aot_from_codes(contracts, None)?;
-    
 
-    Ok(code_hashes)
+    Ok(contracts)
+}
+
+fn hash_bytecodes(bytecodes: &[Vec<u8>]) -> Vec<B256> {
+    bytecodes.iter().map(|b| keccak256(b)).collect()
 }

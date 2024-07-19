@@ -84,7 +84,7 @@ fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
 
     for (symbol, run_type) in [
         ("jit", SimRunType::JITCompiled),
-        ("aot", SimRunType::AOTCompiled),
+        ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
         ("native", SimRunType::Native),
     ] {
         info!("Running {}", symbol.to_uppercase());
@@ -106,7 +106,7 @@ fn run_block_benchmarks(block_num: u64, config: &SimConfig) -> Result<()> {
 
     for (symbol, run_type) in [
         ("jit", SimRunType::JITCompiled),
-        ("aot", SimRunType::AOTCompiled),
+        ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
         ("native", SimRunType::Native),
     ] {
         info!("Running {}", symbol.to_uppercase());
@@ -129,7 +129,7 @@ fn run_call_benchmarks(call: SimCall, config: &SimConfig) -> Result<()> {
     
     for (symbol, run_type) in [
         ("jit", SimRunType::JITCompiled),
-        ("aot", SimRunType::AOTCompiled),
+        ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
         ("native", SimRunType::Native),
     ] {
         info!("Running {}", symbol.to_uppercase());
