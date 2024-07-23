@@ -2,7 +2,7 @@ mod utils;
 mod cli;
 mod sim;
 
-use std::{time::Duration, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 use tracing::{info, span, Level};
 use criterion::Criterion;
 use cli::{Cli, Commands};
@@ -70,11 +70,9 @@ fn main() -> Result<()> {
             }
         }, 
         Commands::BlockRange(range_args) => {
-            let start_block = range_args.start;
-            let end_block = range_args.end;
-            // todo: checks: start < end, end - start <= 100
-            info!("Comparing block range: {start_block} - {end_block}");
-            compare_block_range(start_block..end_block, &config)?;
+            info!("Comparing block range: {}", range_args.block_range);
+            let args: BlockRangeArgs = range_args.try_into()?;
+            compare_block_range(args, &config)?;
         }
     }
     Ok(())
@@ -156,16 +154,13 @@ struct MeasureRecord {
     exe_time: f64,
 }
 
-fn compare_block_range(block_range: std::ops::Range<u64>, config: &SimConfig) -> Result<()> {
-    let stat_record_path = "block_range_stats.csv"; // todo: put into config + let user specify name of the file (eg multiple runs)
-    let mut writer = csv::WriterBuilder::new().from_path(stat_record_path)?;
-    let warmup_iter = 100;
-    let measured_iter = 10_000;
+fn compare_block_range(block_range: BlockRangeArgs, config: &SimConfig) -> Result<()> {
+    let mut writer = csv::WriterBuilder::new().from_path(&block_range.out_path)?;
 
     let span = span!(Level::INFO, "compare_block_range");
     let _guard = span.enter();
 
-    for block_num in block_range {
+    for block_num in block_range.block_iter {
         for (symbol, run_type) in [
             ("jit", SimRunType::JITCompiled),
             ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
@@ -174,8 +169,11 @@ fn compare_block_range(block_range: std::ops::Range<u64>, config: &SimConfig) ->
             info!("Running {} for block {block_num}", symbol.to_uppercase());
             let run_type_clone = run_type.clone();
             let mut fnc = sim::make_block_sim(block_num, run_type_clone, config)?;
-            let exe_time = measure_execution_time(|| { let _ = fnc(); }, warmup_iter, measured_iter);
-            
+            let exe_time = measure_execution_time(
+                || { let _ = fnc(); }, 
+                block_range.warmup_iter, 
+                block_range.bench_iter
+            );
             writer.serialize(MeasureRecord {
                 block_num,
                 run_type: symbol.to_string(),
@@ -185,24 +183,25 @@ fn compare_block_range(block_range: std::ops::Range<u64>, config: &SimConfig) ->
     }
     writer.flush()?;
     info!("Finished comparing block range ✨");
-    info!("The records are written to {stat_record_path}");
+    info!("The records are written to {}", block_range.out_path.display());
     Ok(())
 }
 
 use std::time::Instant;
 
-fn measure_execution_time<F>(mut f: F, warm_up_iterations: usize, measured_iterations: usize) -> f64
+fn measure_execution_time<F>(mut f: F, warm_up_iterations: u32, measured_iterations: u32) -> f64
 where
     F: FnMut(),
 {
     // Warm-up phase
+    info!("Warming up with {warm_up_iterations} iterations");
     for _ in 0..warm_up_iterations {
         f();
     }
 
     // Measurement phase
+    info!("Measuring with {measured_iterations} iterations");
     let mut total_duration = 0_u128;
-
     for _ in 0..measured_iterations {
         let start = Instant::now();
         f();
@@ -211,4 +210,77 @@ where
     }
 
     total_duration as f64 / measured_iterations as f64
+}
+
+fn epoch_now() -> Result<u64> {
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+    Ok(epoch)
+}
+
+struct BlockRangeArgs {
+    block_iter: Vec<u64>,
+    out_path: PathBuf,
+    warmup_iter: u32,
+    bench_iter: u32,
+}
+
+impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
+    type Error = eyre::Error;
+
+    // todo: declare default as constants
+    fn try_from(cli_args: cli::BlockRangeArgsCli) -> Result<Self, Self::Error> {
+        let [start, end, ..] = cli_args.block_range
+            .split_terminator("..")
+            .collect::<Vec<_>>()[..]
+            else {
+                return Err(eyre::eyre!("Invalid block range format"));
+            };
+        let start = start.parse::<u64>()?;
+        let end = end.parse::<u64>()?;
+        if end < start {
+            return Err(eyre::eyre!("End block must be greater than start block"));
+        }
+        let default_out_dir = std::env::current_dir()?
+            .join(".data/measurments");
+        make_dir(&default_out_dir)?;
+        let label = cli_args.label.unwrap_or(format!("block_range_{}", epoch_now()?));
+        let out_path = cli_args.out_dir
+            .map(|dir_path_str| PathBuf::from(dir_path_str))
+            .unwrap_or(default_out_dir)
+            .join(label + ".csv");
+        let warmup_iter = cli_args.warmup_iter.unwrap_or(50_000);
+        let bench_iter = cli_args.bench_iter.unwrap_or(100_000);
+        let range_size = (end-start) as u32;
+        let sample_size = cli_args.sample_size.unwrap_or(range_size);
+        if sample_size > range_size {
+            return Err(eyre::eyre!("Invalid sample size"));
+        }
+        let block_iter = random_sequence(start, end, sample_size as usize);
+
+        Ok(Self {
+            block_iter,
+            out_path,
+            warmup_iter,
+            bench_iter,
+        })
+    }
+}
+
+pub fn make_dir(dir_path: &PathBuf) -> Result<()> {
+    if !dir_path.exists() {
+        std::fs::create_dir_all(&dir_path)?;
+    }
+    Ok(())
+}
+
+use rand::seq::SliceRandom;
+
+// todo: could be very inefficient not to leave it as iter
+fn random_sequence(start: u64, end: u64, size: usize) -> Vec<u64> {
+    let mut rng = rand::thread_rng();
+    let mut range: Vec<u64> = (start..end).collect();
+    range.shuffle(&mut rng);
+    range.into_iter().take(size).into_iter().collect()
 }

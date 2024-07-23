@@ -3560,6 +3560,7 @@ dependencies = [
  "eyre",
  "hex",
  "libloading",
+ "rand 0.8.5",
  "rayon",
  "reth-chainspec",
  "reth-db",

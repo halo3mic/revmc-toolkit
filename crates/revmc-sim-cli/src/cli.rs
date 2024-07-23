@@ -11,19 +11,19 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Build(BuildArgs),
-    Run(RunArgs),
-    Bench(BenchArgs),
-    BlockRange(BlockRangeArgs),
+    Build(BuildArgsCli),
+    Run(RunArgsCli),
+    Bench(BenchArgsCli),
+    BlockRange(BlockRangeArgsCli),
 }
 
 #[derive(Args, Debug)]
-pub struct BuildArgs {
+pub struct BuildArgsCli {
     // todo
 }
 
 #[derive(Args, Debug)]
-pub struct RunArgs {
+pub struct RunArgsCli {
     #[arg(short, long, help = "TxHash of the transaction to run/bench.")]
     pub tx_hash: Option<String>, 
     #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
@@ -33,7 +33,7 @@ pub struct RunArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct BenchArgs {
+pub struct BenchArgsCli {
     #[arg(short, long, help = "TxHash of the transaction to run/bench.")]
     pub tx_hash: Option<String>, 
     #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
@@ -41,9 +41,17 @@ pub struct BenchArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct BlockRangeArgs {
-    #[arg(short, long, help = "Start block number")]
-    pub start: u64,
-    #[arg(short, long, help = "End block number")]
-    pub end: u64,
+pub struct BlockRangeArgsCli {
+    #[arg(help = "Block range in format start..end")]
+    pub block_range: String,
+    #[arg(help = "Label of run")]
+    pub label: Option<String>,
+    #[arg(short, long, help = "Number of samples taken from the range. If ommited the whole range is compared.")]
+    pub sample_size: Option<u32>,
+    #[arg(short, long, help = "Path to dir where measurments will be stored.")]
+    pub out_dir: Option<String>,
+    #[arg(short, long, help = "Warmup iterations.")]
+    pub warmup_iter: Option<u32>,
+    #[arg(short, long, help = "Bench iterations.")]
+    pub bench_iter: Option<u32>,
 }
