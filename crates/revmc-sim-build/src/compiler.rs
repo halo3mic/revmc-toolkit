@@ -96,7 +96,6 @@ impl Compiler {
         compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
-        debug!("Writing object file to {}", out_dir.display());
         let obj = Self::write_precompiled_obj(&mut compiler, &name, &out_dir)?;
         if !self.opt.no_link {
             Self::link(&obj, &out_dir)?;
@@ -104,19 +103,30 @@ impl Compiler {
         Ok(())
     }
 
-    // todo: same compiler can be used for multiple JIT compilations - just one needs to be leaked instead of many
     pub fn compile_jit(&self, bytecode: &[u8]) -> Result<JitCompileOut> {
-        let bytecode_hash = revm::primitives::keccak256(bytecode);
-        let name = bytecode_hash.to_string();
-        debug!("Compiling JIT contract with name {}", name);
-    
-        let ctx: &'static Context = Box::leak(Box::new(Context::create())); // todo: better solution than leaking memory
-        let mut compiler = self.create_compiler(ctx, &name, false)?;
-        let fn_id = compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
-        let fnc = unsafe { compiler.jit_function(fn_id)? };
-        Box::leak(Box::new(compiler)); // ! BAD PRACTICE (LEAKING MEMORY) - only for demo to avoid segmentation fault
-        
-        Ok((bytecode_hash, fnc))
+        self.compile_jit_many(vec![bytecode]).map(|mut v| v.pop().unwrap())
+    }
+
+    // ! BAD PRACTICE (LEAKING MEMORY) - only for demo to avoid segmentation fault
+    pub fn compile_jit_many(&self, bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
+        let ctx: &'static Context = Box::leak(Box::new(Context::create()));
+        let mut compiler = self.create_compiler(ctx, "compile_many", false)?;
+
+        // First we translate all at once, only then we finalize them
+        let fn_ids = bytecodes.iter().map(|bytecode| {
+            let bytecode_hash = revm::primitives::keccak256(bytecode);
+            let name = bytecode_hash.to_string();
+            debug!("Compiling JIT contract with name {}", name);
+            let fn_id = compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
+            Ok((bytecode_hash, fn_id))
+        }).collect::<Result<Vec<_>>>()?;  
+        let fncs = fn_ids.into_iter().map(|(bytecode_hash, fn_id)| {
+            let fnc = unsafe { compiler.jit_function(fn_id)? };
+            Ok((bytecode_hash, fnc))
+        }).collect::<Result<Vec<_>>>()?;
+        Box::leak(Box::new(compiler));
+
+        Ok(fncs)
     }
     
     fn create_compiler(&self, ctx: &'static Context, name: &str, aot: bool) -> Result<EvmCompiler<EvmLlvmBackend<'static>>> {
