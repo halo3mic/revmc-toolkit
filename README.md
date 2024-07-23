@@ -1,4 +1,4 @@
-## revmc-sim
+# revmc-sim
 
 Tool for comparing execution of calls, transactions and blocks with [revmc](https://github.com/paradigmxyz/revmc) JIT and AOT compiled functions. 
 
