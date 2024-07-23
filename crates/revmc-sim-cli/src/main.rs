@@ -68,6 +68,13 @@ fn main() -> Result<()> {
                 info!("Running bench for call: {call_type:?}");
                 run_call_benchmarks(SimCall::Fibbonacci, &config)?;
             }
+        }, 
+        Commands::BlockRange(range_args) => {
+            let start_block = range_args.start;
+            let end_block = range_args.end;
+            // todo: checks: start < end, end - start <= 100
+            info!("Comparing block range: {start_block} - {end_block}");
+            compare_block_range(start_block..end_block, &config)?;
         }
     }
     Ok(())
@@ -79,8 +86,8 @@ fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
     let _guard = span.enter();
     info!("TxHash: {:?}", tx_hash);
     let mut criterion = Criterion::default()
-        .sample_size(200)
-        .measurement_time(Duration::from_secs(30));
+        .sample_size(100)
+        .measurement_time(Duration::from_secs(5));
 
     for (symbol, run_type) in [
         ("jit", SimRunType::JITCompiled),
@@ -101,7 +108,7 @@ fn run_block_benchmarks(block_num: u64, config: &SimConfig) -> Result<()> {
     let _guard = span.enter();
     info!("Block: {:?}", block_num);
     let mut criterion = Criterion::default()
-        .sample_size(10)
+        .sample_size(100)
         .measurement_time(Duration::from_secs(5));
 
     for (symbol, run_type) in [
@@ -123,8 +130,8 @@ fn run_call_benchmarks(call: SimCall, config: &SimConfig) -> Result<()> {
     let _guard = span.enter();
     info!("Call: {:?}", call);
     let mut criterion = Criterion::default()
-        .sample_size(200)
-        .measurement_time(Duration::from_secs(30));
+        .sample_size(100)
+        .measurement_time(Duration::from_secs(5));
     let mut group = criterion.benchmark_group("call_benchmarks");
     
     for (symbol, run_type) in [
@@ -140,4 +147,68 @@ fn run_call_benchmarks(call: SimCall, config: &SimConfig) -> Result<()> {
     }
     group.finish();
     Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+struct MeasureRecord {
+    block_num: u64,
+    run_type: String,
+    exe_time: f64,
+}
+
+fn compare_block_range(block_range: std::ops::Range<u64>, config: &SimConfig) -> Result<()> {
+    let stat_record_path = "block_range_stats.csv"; // todo: put into config + let user specify name of the file (eg multiple runs)
+    let mut writer = csv::WriterBuilder::new().from_path(stat_record_path)?;
+    let warmup_iter = 100;
+    let measured_iter = 10_000;
+
+    let span = span!(Level::INFO, "compare_block_range");
+    let _guard = span.enter();
+
+    for block_num in block_range {
+        for (symbol, run_type) in [
+            ("jit", SimRunType::JITCompiled),
+            ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
+            ("native", SimRunType::Native),
+        ] {
+            info!("Running {} for block {block_num}", symbol.to_uppercase());
+            let run_type_clone = run_type.clone();
+            let mut fnc = sim::make_block_sim(block_num, run_type_clone, config)?;
+            let exe_time = measure_execution_time(|| { let _ = fnc(); }, warmup_iter, measured_iter);
+            
+            writer.serialize(MeasureRecord {
+                block_num,
+                run_type: symbol.to_string(),
+                exe_time,
+            })?;
+        }
+    }
+    writer.flush()?;
+    info!("Finished comparing block range ✨");
+    info!("The records are written to {stat_record_path}");
+    Ok(())
+}
+
+use std::time::Instant;
+
+fn measure_execution_time<F>(mut f: F, warm_up_iterations: usize, measured_iterations: usize) -> f64
+where
+    F: FnMut(),
+{
+    // Warm-up phase
+    for _ in 0..warm_up_iterations {
+        f();
+    }
+
+    // Measurement phase
+    let mut total_duration = 0_u128;
+
+    for _ in 0..measured_iterations {
+        let start = Instant::now();
+        f();
+        let duration = Instant::now() - start;
+        total_duration += duration.as_nanos();
+    }
+
+    total_duration as f64 / measured_iterations as f64
 }

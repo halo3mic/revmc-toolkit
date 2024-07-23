@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 
-const DEFAULT_DATA_DIR: &str = ".data";
+const DEFAULT_DATA_DIR: &str = ".data/aot_compile";
 
 pub fn default_dir() -> PathBuf {
     std::env::current_dir()

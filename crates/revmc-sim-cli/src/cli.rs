@@ -13,7 +13,8 @@ pub struct Cli {
 pub enum Commands {
     Build(BuildArgs),
     Run(RunArgs),
-    Bench(BenchArgs)
+    Bench(BenchArgs),
+    BlockRange(BlockRangeArgs),
 }
 
 #[derive(Args, Debug)]
@@ -37,4 +38,12 @@ pub struct BenchArgs {
     pub tx_hash: Option<String>, 
     #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
     pub block_num: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct BlockRangeArgs {
+    #[arg(short, long, help = "Start block number")]
+    pub start: u64,
+    #[arg(short, long, help = "End block number")]
+    pub end: u64,
 }
