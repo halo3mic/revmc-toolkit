@@ -6,7 +6,7 @@ const DEFAULT_CONFIG_NAME: &str = "revmc.build.config.json";
 
 fn main() -> Result<()> {
     let config = read_config()?;
-    revmc_sim_build::compile_contracts(config.contracts, config.fallback_config)?;
+    revmc_sim_build::compile_contracts_aot(config.contracts, config.fallback_config)?;
     Ok(())
 }
 

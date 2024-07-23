@@ -1,16 +1,20 @@
 use revmc::{
     llvm::inkwell::context::Context,
     EvmLlvmBackend, 
-    EvmCompiler, 
+    EvmCompiler,
+    EvmCompilerFn,
 };
-use revm::primitives::SpecId;
+use revm::primitives::{SpecId, B256};
 
 use eyre::{ensure, Ok, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
+use tracing::debug;
 
 use crate::utils::{self, OptimizationLevelDeseralizable};
 
+
+pub type JitCompileOut = (B256, EvmCompilerFn);
 
 /**
  * Performance considerations:
@@ -45,12 +49,12 @@ impl CompilerOptions {
             target: "native".to_string(),
             target_cpu: None,
             target_features: None,
-            no_gas: true, // todo try true for performance
-            no_len_checks: true, // todo try true for performance
+            no_gas: true,
+            no_len_checks: true,
             frame_pointers: false,
             debug_assertions: false,
             no_link: false,
-            opt_level: OptimizationLevelDeseralizable::Aggressive, // todo: try aggresive
+            opt_level: OptimizationLevelDeseralizable::Aggressive,
             spec_id: SpecId::CANCUN, // ! EOF yet not implemented
             label: None,
         }
@@ -70,24 +74,25 @@ impl Default for CompilerOptions {
     }
 }
 
-impl Into<AOTCompiler> for CompilerOptions {
-    fn into(self) -> AOTCompiler {
-        AOTCompiler { opt: self }
+impl Into<Compiler> for CompilerOptions {
+    fn into(self) -> Compiler {
+        Compiler { opt: self }
     }
 }
 
 #[derive(Default)]
-pub struct AOTCompiler {
+pub struct Compiler {
     opt: CompilerOptions,
 }
 
-impl AOTCompiler {
+impl Compiler {
     
-    pub fn compile(&self, bytecode: &[u8]) -> Result<()> {    
+    pub fn compile_aot(&self, bytecode: &[u8]) -> Result<()> {  
         let name = utils::bytecode_hash_str(bytecode);
+        debug!("Compiling AOT contract with name {}", name);  
 
-        let ctx = Context::create();
-        let mut compiler = self.create_compiler(&ctx, &name)?;    
+        let ctx: &'static Context = Box::leak(Box::new(Context::create()));
+        let mut compiler = self.create_compiler(ctx, &name, true)?;    
         compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
@@ -95,15 +100,40 @@ impl AOTCompiler {
         if !self.opt.no_link {
             Self::link(&obj, &out_dir)?;
         }
-    
-        // todo: if label exists link it to the bytecode hash
         Ok(())
     }
+
+    pub fn compile_jit(&self, bytecode: &[u8]) -> Result<JitCompileOut> {
+        self.compile_jit_many(vec![bytecode]).map(|mut v| v.pop().unwrap())
+    }
+
+    // ! LEAKING MEMORY - only for demo to avoid segmentation fault
+    // todo: return a struct that when dropped also drops the context and compiler
+    pub fn compile_jit_many(&self, bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
+        let ctx: &'static Context = Box::leak(Box::new(Context::create()));
+        let mut compiler = self.create_compiler(ctx, "compile_many", false)?;
+
+        // First we translate all at once, only then we finalize them
+        let fn_ids = bytecodes.iter().map(|bytecode| {
+            let bytecode_hash = revm::primitives::keccak256(bytecode);
+            let name = bytecode_hash.to_string();
+            debug!("Compiling JIT contract with name {}", name);
+            let fn_id = compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
+            Ok((bytecode_hash, fn_id))
+        }).collect::<Result<Vec<_>>>()?;  
+        let fncs = fn_ids.into_iter().map(|(bytecode_hash, fn_id)| {
+            let fnc = unsafe { compiler.jit_function(fn_id)? };
+            Ok((bytecode_hash, fnc))
+        }).collect::<Result<Vec<_>>>()?;
+        Box::leak(Box::new(compiler));
+
+        Ok(fncs)
+    }
     
-    fn create_compiler<'a>(&self, ctx: &'a Context, name: &str) -> Result<EvmCompiler<EvmLlvmBackend<'a>>> {
+    fn create_compiler(&self, ctx: &'static Context, name: &str, aot: bool) -> Result<EvmCompiler<EvmLlvmBackend<'static>>> {
         let target = self.create_target();
         let backend = EvmLlvmBackend::new_for_target(
-            ctx, true, self.opt.opt_level.clone().into(), &target
+            ctx, aot, self.opt.opt_level.clone().into(), &target
         )?;
         let mut compiler = EvmCompiler::new(backend);
     
@@ -132,7 +162,7 @@ impl AOTCompiler {
         out_dir: &PathBuf,
     ) -> Result<PathBuf> {
         let obj = out_dir.join(label).with_extension("o");
-        println!("Writing object file to {}", obj.display());
+        debug!("Writing object file to {}", obj.display());
         compiler.write_object_to_file(&obj)?;
         if !obj.exists() {
             return Err(eyre::eyre!("Failed to compile object file"));
@@ -145,7 +175,7 @@ impl AOTCompiler {
         revmc::Linker::new()
             .link(&so, [obj.to_str().unwrap()])?;
         ensure!(so.exists(), "Failed to link object file");
-        eprintln!("Linked shared object file to {}", so.display());
+        debug!("Linked shared object file to {}", so.display());
         Ok(())
     }
 
