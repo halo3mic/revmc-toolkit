@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     dotenv::dotenv().ok();
 
     let db_path = std::env::var("RETH_DB_PATH")?;
-    let dir_path = std::env::current_dir()?.join(".data");
+    let dir_path = revmc_sim_build::default_dir();
     let dir_path = dir_path.to_string_lossy().to_string();
     let provider_factory = Arc::new(utils::evm::make_provider_factory(&db_path)?);
     let config = SimConfig::new(provider_factory, dir_path);

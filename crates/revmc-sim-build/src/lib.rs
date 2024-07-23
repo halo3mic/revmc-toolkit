@@ -10,6 +10,7 @@ use hex;
 use tracing::debug;
 
 pub use compiler::{CompilerOptions, Compiler, JitCompileOut};
+pub use utils::default_dir;
 
 
 // todo: is this still relevant given we have similar functionality in cli? + address field is a problem
