@@ -6,7 +6,7 @@ use revm::{
 use libloading::Library;
 use revmc::EvmCompilerFn;
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use eyre::Result;
 
@@ -27,9 +27,9 @@ pub fn build_external_context(
 
 #[derive(Default)]
 pub struct ExternalContext {
-    compiled_fns: HashMap<B256, (EvmCompilerFn, ReferenceDropObject)>,
-    pub touches: Option<HashMap<Address, TouchCounter>>,
-}  // todo: consider fast hashmap
+    compiled_fns: FxHashMap<B256, (EvmCompilerFn, ReferenceDropObject)>,
+    pub touches: Option<FxHashMap<Address, TouchCounter>>,
+}
 
 impl ExternalContext {
 
@@ -38,7 +38,7 @@ impl ExternalContext {
     }
 
     fn register_touch(&mut self, address: Address, non_native: bool) {
-        let touches = self.touches.get_or_insert_with(HashMap::new);
+        let touches = self.touches.get_or_insert_with(FxHashMap::default);
         touches.entry(address)
             .and_modify(|c| c.increment(non_native))
             .or_insert(TouchCounter::new_with_increment(non_native));
@@ -63,7 +63,7 @@ impl From<Vec<(B256, (EvmCompilerFn, Library))>> for ExternalContext {
     }
 }
 
-// todo: track gas consumption
+// todo: track gas consumption?
 #[derive(Default, Debug)]
 pub struct TouchCounter {
     pub overall: usize,

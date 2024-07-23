@@ -10,3 +10,4 @@ revm.workspace = true
 eyre.workspace = true
 libloading.workspace = true
 tracing = "0.1.40"
+rustc-hash = "2.0.0"
