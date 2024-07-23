@@ -17,6 +17,7 @@ use revmc::primitives::{hex, keccak256};
 
 use std::{str::FromStr, sync::Arc};
 use eyre::{Result, OptionExt};
+use tracing::warn;
 
 use crate::utils;
 
@@ -32,7 +33,7 @@ impl SimConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SimRunType {
     Native,
     AOTCompiled { dir_path: String },
@@ -286,7 +287,8 @@ fn make_evm<'a>(
 }
 
 fn env_with_handler_cfg(chain_id: u64, block: &Block) -> EnvWithHandlerCfg {
-    let block_env = block_env_from_block(block);
+    let mut block_env = block_env_from_block(block);
+    block_env.prevrandao = Some(block.header.mix_hash);
     let cfg = CfgEnv::default().with_chain_id(chain_id);
     let cfg_env = CfgEnvWithHandlerCfg::new_with_spec_id(cfg, SpecId::CANCUN);
     let env = EnvWithHandlerCfg::new_with_cfg_env(cfg_env, block_env, TxEnv::default());
@@ -368,17 +370,25 @@ where
         .collect::<Vec<Address>>();
 
     let contracts = touched_contracts.iter()
-        .map(|account| {
+        .filter_map(|account| {
             match db.accounts.get(account) {
                 Some(account) => {
-                    let code = account.info.code.as_ref()
-                        .ok_or_eyre("No code found")?;
-                    Ok(code.original_byte_slice().to_vec())
+                    let code_res = account.info.code.as_ref()
+                        .ok_or_eyre("No code found")
+                        .map(|code| code.original_byte_slice().to_vec());
+                    Some(code_res)
                 },
                 None => {
-                    let code = state_provider.account_code(*account)?
-                        .ok_or_eyre("No code found for address")?;
-                    Ok(code.original_byte_slice().to_vec())
+                    if let Some(code_res) = state_provider.account_code(*account).transpose() {
+                        let code_res = code_res
+                            .map(|code| code.original_byte_slice().to_vec())
+                            .map_err(|e| e.into());
+                        Some(code_res)
+                    } else {
+                        // ! Note that in some cases the bytecode for the account is filled during the run eg. 0xff1265768b16c34523a1931f6cacd22502ef1106387a3cf7f302402e3a341682
+                        warn!("No code found for address {account:?}");
+                        None
+                    }
                 }
             }
         })
