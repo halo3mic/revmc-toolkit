@@ -6,7 +6,7 @@ use revmc::{
 };
 use revm::primitives::{SpecId, B256};
 
-use eyre::{ensure, Ok, Result};
+use eyre::{OptionExt, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
 use tracing::debug;
@@ -172,11 +172,18 @@ impl Compiler {
     
     fn link(obj: &PathBuf, out_dir: &PathBuf) -> Result<()> {
         let so = out_dir.join("a.so");
-        revmc::Linker::new()
-            .link(&so, [obj.to_str().unwrap()])?;
-        ensure!(so.exists(), "Failed to link object file");
-        debug!("Linked shared object file to {}", so.display());
-        Ok(())
+        let obj_str = obj.to_str().ok_or_eyre("Invalid object file path")?;
+    
+        for _ in 0..10 {
+            revmc::Linker::new().link(&so, [obj_str])?;
+            if so.exists() {
+                debug!("Linked shared object file to {}", so.display());
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    
+        Err(eyre::eyre!("Failed to link object file after 10 attempts"))
     }
 
     fn out_dir(&self, name: &str) -> Result<PathBuf> {
