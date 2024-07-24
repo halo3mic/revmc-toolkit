@@ -243,7 +243,7 @@ impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
             return Err(eyre::eyre!("End block must be greater than start block"));
         }
         let default_out_dir = std::env::current_dir()?
-            .join(".data/measurments");
+            .join(".data/measurements");
         make_dir(&default_out_dir)?;
         // todo: instead of epoch choose more representable label
         let label = cli_args.label.unwrap_or(format!("block_range_{}", epoch_now()?));
