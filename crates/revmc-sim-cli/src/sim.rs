@@ -22,7 +22,7 @@ use tracing::warn;
 use crate::utils;
 
 // todo: It might make sense to work with struct here
-// todo: create sim-context outside of this module and load it here (no compiling from here)
+// todo: create sim-context outside of this module and load it here (no compiling from here) - shared ctx could make the block-range sim super fast
 
 pub struct SimConfig {
     pub provider_factory: Arc<ProviderFactory<DatabaseEnv>>,

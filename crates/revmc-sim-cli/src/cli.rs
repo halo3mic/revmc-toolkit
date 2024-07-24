@@ -48,7 +48,7 @@ pub struct BlockRangeArgsCli {
     pub label: Option<String>,
     #[arg(short, long, help = "Number of samples taken from the range. If ommited the whole range is compared.")]
     pub sample_size: Option<u32>,
-    #[arg(short, long, help = "Path to dir where measurments will be stored.")]
+    #[arg(short, long, help = "Path to dir where measurements will be stored.")]
     pub out_dir: Option<String>,
     #[arg(short, long, help = "Warmup iterations.")]
     pub warmup_iter: Option<u32>,

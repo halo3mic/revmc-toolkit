@@ -4,4 +4,4 @@
 .vscode
 .venv
 
-!/.data/.gitkeep
+!/.data/measurements-public

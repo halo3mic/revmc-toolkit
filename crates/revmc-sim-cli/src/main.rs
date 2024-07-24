@@ -180,8 +180,8 @@ fn compare_block_range(block_range: BlockRangeArgs, config: &SimConfig) -> Resul
                 exe_time,
             })?;
         }
+        writer.flush()?;
     }
-    writer.flush()?;
     info!("Finished comparing block range ✨");
     info!("The records are written to {}", block_range.out_path.display());
     Ok(())
@@ -243,8 +243,9 @@ impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
             return Err(eyre::eyre!("End block must be greater than start block"));
         }
         let default_out_dir = std::env::current_dir()?
-            .join(".data/measurments");
+            .join(".data/measurements");
         make_dir(&default_out_dir)?;
+        // todo: instead of epoch choose more representable label
         let label = cli_args.label.unwrap_or(format!("block_range_{}", epoch_now()?));
         let out_path = cli_args.out_dir
             .map(|dir_path_str| PathBuf::from(dir_path_str))
@@ -253,11 +254,15 @@ impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
         let warmup_iter = cli_args.warmup_iter.unwrap_or(50_000);
         let bench_iter = cli_args.bench_iter.unwrap_or(100_000);
         let range_size = (end-start) as u32;
-        let sample_size = cli_args.sample_size.unwrap_or(range_size);
-        if sample_size > range_size {
-            return Err(eyre::eyre!("Invalid sample size"));
-        }
-        let block_iter = random_sequence(start, end, sample_size as usize);
+        let block_iter = 
+            if let Some(sample_size) = cli_args.sample_size {
+                if sample_size > range_size {
+                    return Err(eyre::eyre!("Invalid sample size"));
+                }
+                random_sequence(start, end, sample_size as usize)
+            } else {
+                (start..end).collect()
+            };
 
         Ok(Self {
             block_iter,
@@ -277,6 +282,7 @@ pub fn make_dir(dir_path: &PathBuf) -> Result<()> {
 
 use rand::seq::SliceRandom;
 
+// todo: let user specify the seed for reproducibility - having same AOT files can save a lot of time and storage
 // todo: could be very inefficient not to leave it as iter
 fn random_sequence(start: u64, end: u64, size: usize) -> Vec<u64> {
     let mut rng = rand::thread_rng();
