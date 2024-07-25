@@ -9,23 +9,23 @@ use tracing::debug;
 
 
 pub struct EvmCompilerFnLoader<'a> {
-    dir_path: &'a str
+    dir_path: &'a PathBuf
 }
 
 impl<'a> EvmCompilerFnLoader<'a> {
-    pub fn new(dir_path: &'a str) -> Self {
+    pub fn new(dir_path: &'a PathBuf) -> Self {
         Self { dir_path }
     }
 
     pub fn load(&self, bytecode_hash: &B256) -> Result<(EvmCompilerFn, Library)> {
         let name = bytecode_hash.to_string();
-        let path = PathBuf::from_str(self.dir_path)?.join(&name).join("a.so");
+        let path = self.dir_path.join(&name).join("a.so");
         let fnc = Self::load_from_path(&name, path)?;
         Ok(fnc)
     }
 
     pub fn load_selected(&self, bytecode_hashes: Vec<B256>) -> Result<Vec<(B256, (EvmCompilerFn, Library))>> {
-        debug!("Loading AOT compilations from dir {}: {bytecode_hashes:?}", self.dir_path);
+        debug!("Loading AOT compilations from dir {}: {bytecode_hashes:?}", self.dir_path.display());
         bytecode_hashes.into_iter().map(|hash| {
             let fnc = self.load(&hash)?;
             Ok((hash, fnc))
@@ -33,7 +33,7 @@ impl<'a> EvmCompilerFnLoader<'a> {
     }
 
     pub fn load_all(&self) -> Result<Vec<(B256, (EvmCompilerFn, Library))>> {
-        debug!("Loading all AOT compilations from dir {}", self.dir_path);
+        debug!("Loading all AOT compilations from dir {}", self.dir_path.display());
         let mut hash_fn_pairs = vec![];
         for entry in std::fs::read_dir(&self.dir_path)? {
             let entry = entry?;

@@ -25,7 +25,7 @@ pub fn compile_jit_from_codes(
     fallback_opt: Option<CompilerOptions>,
 ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
     let contracts = codes.into_iter().map(|c| c.into()).collect();
-    revmc_sim_build::compile_contracts_jit(contracts, fallback_opt)
+    revmc_sim_build::compile_contracts_jit_par(contracts, fallback_opt)
 }
 
 // pub fn compile_aot_from_contracts_with_fn<F>(

@@ -41,11 +41,12 @@ impl From<Vec<u8>> for CodeWithOptions {
     }
 }
 
+// todo: should dedup be here?
+
 pub fn compile_contracts_aot(
     args: Vec<CodeWithOptions>, 
     fallback_opt: Option<CompilerOptions>
 ) -> Result<Vec<Result<()>>> {
-    // todo: check for duplicates among the args
     Ok(args.into_par_iter()
         .map(|arg| compile_contract_aot(&arg.code, arg.options.or(fallback_opt.clone())))
         .collect())
@@ -55,9 +56,19 @@ pub fn compile_contracts_jit(
     args: Vec<CodeWithOptions>, 
     fallback_opt: Option<CompilerOptions>
 ) -> Result<Vec<Result<JitCompileOut>>> {
-    // todo: check for duplicates among the args
+    let compiler: Compiler = fallback_opt.unwrap_or_default().into();
+    let args = args.iter().map(|arg| &arg.code[..]).collect::<Vec<&[u8]>>();
+    let res = compiler.compile_jit_many(args)?; // todo: add fallback opt
+    Ok(res.into_iter().map(|r| Ok(r)).collect())
+}
+
+
+pub fn compile_contracts_jit_par(
+    args: Vec<CodeWithOptions>, 
+    fallback_opt: Option<CompilerOptions>
+) -> Result<Vec<Result<JitCompileOut>>> {
     Ok(args.into_par_iter()
-        .map(|arg| compile_contract_jit(&arg.code, arg.options.or(fallback_opt.clone())))
+        .map(|arg| compile_contract_jit(&arg.code, arg.options.or_else(|| fallback_opt.clone())))
         .collect())
 }
 
@@ -75,7 +86,7 @@ pub fn compile_contract_aot(code: &[u8], options: Option<CompilerOptions>) -> Re
 
 pub fn compile_contract_jit(code: &[u8], options: Option<CompilerOptions>) -> Result<JitCompileOut> {
     let compiler: Compiler = options.unwrap_or_default().into();
-    return compiler.compile_jit(&code);
+    compiler.compile_jit(&code)
 }
 
 fn hex_or_vec<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>

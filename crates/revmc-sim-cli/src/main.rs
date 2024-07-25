@@ -3,7 +3,7 @@ mod cli;
 mod sim;
 
 use std::{path::PathBuf, str::FromStr, sync::Arc, time::Duration};
-use tracing::{info, span, Level};
+use tracing::{info, span, warn, Level};
 use criterion::Criterion;
 use cli::{Cli, Commands};
 use clap::Parser;
@@ -38,19 +38,30 @@ fn main() -> Result<()> {
         Commands::Run(run_args) => {
             let run_type = run_args.run_type.parse::<SimRunType>()?;
             info!("Running sim for type: {:?}", run_type);
-            if let Some(tx_hash) = run_args.tx_hash {
-                let tx_hash = B256::from_str(&tx_hash)?;
-                info!("Running sim for tx: {tx_hash:?}");
-                sim::run_tx_sim(tx_hash, run_type, &config)?;
-            } else if let Some(block_num) = run_args.block_num {
-                let block_num = block_num.parse::<u64>()?;
-                info!("Running sim for block: {block_num:?}");
-                sim::run_block_sim(block_num, run_type, &config)?;
-            } else {
-                let call_type = SimCall::Fibbonacci; // todo: different call opt
-                info!("Running sim for call: {call_type:?}");
-                sim::run_call_sim(call_type, run_type, &config)?;
-            }
+            let result = 
+                if let Some(tx_hash) = run_args.tx_hash {
+                    let tx_hash = B256::from_str(&tx_hash)?;
+                    info!("Running sim for tx: {tx_hash:?}");
+                    sim::run_tx_sim(tx_hash, run_type, &config)?
+                } else if let Some(block_num) = run_args.block_num {
+                    let block_num = block_num.parse::<u64>()?;
+                    info!("Running sim for block: {block_num:?}");
+                    sim::run_block_sim(block_num, run_type, &config, run_args.block_chunk)?
+                } else {
+                    let call_type = SimCall::Fibbonacci; // todo: different call opt
+                    info!("Running sim for call: {call_type:?}");
+                    sim::run_call_sim(call_type, run_type, &config)?
+                };
+            result.contract_touches.into_iter().for_each(|(address, touch_counter)| {
+                let revmc_sim_load::TouchCounter { non_native, overall } = touch_counter;
+                if result.non_native_exe && non_native != overall {
+                    println!("{}/{} native touches for address {address:?}", overall-non_native, overall);
+                } else if !result.non_native_exe && non_native != 0 {
+                    println!("{}/{} non-native touches for address {address:?}", non_native, overall);
+                }
+            });
+            println!("Success: {}", result.success);
+            println!("Expected-gas-used: {} / Actual-gas-used: {}", result.expected_gas_used, result.gas_used);
         }
         Commands::Bench(bench_args) => {
             info!("Running benches");
@@ -62,7 +73,7 @@ fn main() -> Result<()> {
             } else if let Some(block_num) = bench_args.block_num {
                 let block_num = block_num.parse::<u64>()?;
                 info!("Running bench for block: {block_num:?}");
-                run_block_benchmarks(block_num, &config)?;
+                run_block_benchmarks(block_num, &config, bench_args.block_chunk)?;
             } else {
                 let call_type = SimCall::Fibbonacci; // todo: different call opt
                 info!("Running bench for call: {call_type:?}");
@@ -80,6 +91,7 @@ fn main() -> Result<()> {
 }
 
 fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
+    let dir_path = PathBuf::from(config.dir_path.to_string());
     let span = span!(Level::INFO, "bench_tx");
     let _guard = span.enter();
     info!("TxHash: {:?}", tx_hash);
@@ -88,12 +100,13 @@ fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
         .measurement_time(Duration::from_secs(5));
 
     for (symbol, run_type) in [
-        ("jit", SimRunType::JITCompiled),
-        ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
         ("native", SimRunType::Native),
+        ("aot", SimRunType::AOTCompiled { dir_path }),
+        ("jit", SimRunType::JITCompiled),
     ] {
         info!("Running {}", symbol.to_uppercase());
         let mut fnc = sim::make_tx_sim(tx_hash, run_type, config)?;
+        check_fn_validity(&mut fnc)?;
         criterion.bench_function(&format!("sim_tx_{symbol}"), |b| {
             b.iter(|| { fnc() })
         });
@@ -101,7 +114,8 @@ fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
     Ok(())
 }
 
-fn run_block_benchmarks(block_num: u64, config: &SimConfig) -> Result<()> {
+fn run_block_benchmarks(block_num: u64, config: &SimConfig, block_chunk: Option<f32>) -> Result<()> {
+    let dir_path = PathBuf::from(config.dir_path.to_string());
     let span = span!(Level::INFO, "bench_block");
     let _guard = span.enter();
     info!("Block: {:?}", block_num);
@@ -110,12 +124,13 @@ fn run_block_benchmarks(block_num: u64, config: &SimConfig) -> Result<()> {
         .measurement_time(Duration::from_secs(5));
 
     for (symbol, run_type) in [
-        ("jit", SimRunType::JITCompiled),
-        ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
         ("native", SimRunType::Native),
+        // ("jit", SimRunType::JITCompiled),
+        ("aot", SimRunType::AOTCompiled { dir_path }),
     ] {
         info!("Running {}", symbol.to_uppercase());
-        let mut fnc = sim::make_block_sim(block_num, run_type, config)?;
+        let mut fnc = sim::make_block_sim(block_num, run_type, config, block_chunk)?;
+        check_fn_validity(&mut fnc)?;
         criterion.bench_function(&format!("sim_block_{symbol}"), |b| {
             b.iter(|| { fnc() })
         });
@@ -124,6 +139,7 @@ fn run_block_benchmarks(block_num: u64, config: &SimConfig) -> Result<()> {
 }
 
 fn run_call_benchmarks(call: SimCall, config: &SimConfig) -> Result<()> {
+    let dir_path = PathBuf::from(config.dir_path.to_string());
     let span = span!(Level::INFO, "bench_call");
     let _guard = span.enter();
     info!("Call: {:?}", call);
@@ -134,11 +150,12 @@ fn run_call_benchmarks(call: SimCall, config: &SimConfig) -> Result<()> {
     
     for (symbol, run_type) in [
         ("jit", SimRunType::JITCompiled),
-        ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
+        ("aot", SimRunType::AOTCompiled { dir_path }),
         ("native", SimRunType::Native),
     ] {
         info!("Running {}", symbol.to_uppercase());
         let mut fnc = sim::make_call_sim(call, run_type, config)?;
+        check_fn_validity(&mut fnc)?;
         group.bench_function(&format!("sim_call_{symbol}"), |b| {
             b.iter(|| { fnc() })
         });
@@ -154,25 +171,27 @@ struct MeasureRecord {
     exe_time: f64,
 }
 
-fn compare_block_range(block_range: BlockRangeArgs, config: &SimConfig) -> Result<()> {
-    let mut writer = csv::WriterBuilder::new().from_path(&block_range.out_path)?;
+fn compare_block_range(args: BlockRangeArgs, config: &SimConfig) -> Result<()> {
+    let dir_path = PathBuf::from(config.dir_path.to_string());
+    let mut writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
 
     let span = span!(Level::INFO, "compare_block_range");
     let _guard = span.enter();
 
-    for block_num in block_range.block_iter {
+    for block_num in args.block_iter {
         for (symbol, run_type) in [
-            ("jit", SimRunType::JITCompiled),
-            ("aot", SimRunType::AOTCompiled { dir_path: config.dir_path.clone() }),
             ("native", SimRunType::Native),
+            ("aot", SimRunType::AOTCompiled { dir_path: dir_path.clone() }),
+            // ("jit", SimRunType::JITCompiled),
         ] {
             info!("Running {} for block {block_num}", symbol.to_uppercase());
             let run_type_clone = run_type.clone();
-            let mut fnc = sim::make_block_sim(block_num, run_type_clone, config)?;
+            let mut fnc = sim::make_block_sim(block_num, run_type_clone, config, args.block_chunk)?;
+            check_fn_validity(&mut fnc)?;
             let exe_time = measure_execution_time(
-                || { let _ = fnc(); }, 
-                block_range.warmup_iter, 
-                block_range.bench_iter
+                || { fnc() }, 
+                args.warmup_ms, 
+                args.measurement_ms
             );
             writer.serialize(MeasureRecord {
                 block_num,
@@ -183,33 +202,37 @@ fn compare_block_range(block_range: BlockRangeArgs, config: &SimConfig) -> Resul
         writer.flush()?;
     }
     info!("Finished comparing block range ✨");
-    info!("The records are written to {}", block_range.out_path.display());
+    info!("The records are written to {}", args.out_path.display());
     Ok(())
 }
 
 use std::time::Instant;
 
-fn measure_execution_time<F>(mut f: F, warm_up_iterations: u32, measured_iterations: u32) -> f64
+fn measure_execution_time<F, R>(mut f: F, warmup_ms: u32, measurement_ms: u32) -> f64
 where
-    F: FnMut(),
+    F: FnMut() -> R,
 {
-    // Warm-up phase
-    info!("Warming up with {warm_up_iterations} iterations");
-    for _ in 0..warm_up_iterations {
+    info!("Warming up for {warmup_ms} ms");
+    let warm_up_duration = Duration::from_millis(warmup_ms as u64);
+    let start = Instant::now();
+    let mut warmup_iter = 0;
+    loop {
         f();
+        if Instant::now() - start > warm_up_duration {
+            break;
+        }
+        warmup_iter += 1;
     }
 
-    // Measurement phase
-    info!("Measuring with {measured_iterations} iterations");
-    let mut total_duration = 0_u128;
-    for _ in 0..measured_iterations {
-        let start = Instant::now();
+    let measurement_iter = warmup_iter * measurement_ms / warmup_ms;
+    info!("Measuring with {measurement_iter} iterations");
+    let start = Instant::now();
+    for _ in 0..measurement_iter {
         f();
-        let duration = Instant::now() - start;
-        total_duration += duration.as_nanos();
     }
+    let m_duration = (Instant::now() - start).as_nanos();
 
-    total_duration as f64 / measured_iterations as f64
+    m_duration as f64 / measurement_iter as f64
 }
 
 fn epoch_now() -> Result<u64> {
@@ -222,8 +245,9 @@ fn epoch_now() -> Result<u64> {
 struct BlockRangeArgs {
     block_iter: Vec<u64>,
     out_path: PathBuf,
-    warmup_iter: u32,
-    bench_iter: u32,
+    warmup_ms: u32,
+    measurement_ms: u32,
+    block_chunk: Option<f32>,
 }
 
 impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
@@ -251,24 +275,26 @@ impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
             .map(|dir_path_str| PathBuf::from(dir_path_str))
             .unwrap_or(default_out_dir)
             .join(label + ".csv");
-        let warmup_iter = cli_args.warmup_iter.unwrap_or(50_000);
-        let bench_iter = cli_args.bench_iter.unwrap_or(100_000);
+        let warmup_ms = cli_args.warmup_ms.unwrap_or(3_000);
+        let measurement_ms = cli_args.measurement_ms.unwrap_or(5_000);
         let range_size = (end-start) as u32;
         let block_iter = 
             if let Some(sample_size) = cli_args.sample_size {
                 if sample_size > range_size {
                     return Err(eyre::eyre!("Invalid sample size"));
                 }
-                random_sequence(start, end, sample_size as usize)
+                let rnd_seed = cli_args.rnd_seed.map(|seed| revm::primitives::keccak256(seed.as_bytes()).0); // todo: instead of param into env
+                random_sequence(start, end, sample_size as usize, rnd_seed)?
             } else {
                 (start..end).collect()
             };
 
         Ok(Self {
+            block_chunk: cli_args.block_chunk,
             block_iter,
             out_path,
-            warmup_iter,
-            bench_iter,
+            warmup_ms,
+            measurement_ms,
         })
     }
 }
@@ -281,12 +307,42 @@ pub fn make_dir(dir_path: &PathBuf) -> Result<()> {
 }
 
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 
-// todo: let user specify the seed for reproducibility - having same AOT files can save a lot of time and storage
 // todo: could be very inefficient not to leave it as iter
-fn random_sequence(start: u64, end: u64, size: usize) -> Vec<u64> {
-    let mut rng = rand::thread_rng();
+fn random_sequence(start: u64, end: u64, size: usize, seed: Option<[u8; 32]>) -> Result<Vec<u64>> {
+    let mut rng = if let Some(seed) = seed {
+        ChaCha8Rng::from_seed(seed)
+    } else {
+        ChaCha8Rng::from_rng(rand::thread_rng())?
+    };
     let mut range: Vec<u64> = (start..end).collect();
     range.shuffle(&mut rng);
-    range.into_iter().take(size).into_iter().collect()
+    Ok(range.into_iter()
+        .take(size)
+        .into_iter()
+        .collect())
+}
+
+fn check_fn_validity(fnc: &mut Box<dyn FnMut() -> Result<crate::sim::SimExecutionResult>>) -> Result<()> {
+    for _ in 0..3 {
+        let result = fnc()?;
+        if !result.gas_used_matches_expected() {
+            return Err(eyre::eyre!(
+                "Invalid gas used, expected: {}, actual: {}", 
+                result.expected_gas_used, 
+                result.gas_used
+            ));
+        }
+        if let Some(wrong_touches) = result.wrong_touches() {
+            warn!("Invalid touches for contracts {:?}", wrong_touches);
+            // return Err(eyre::eyre!("Invalid touches for contracts {:?}", wrong_touches));
+        }
+        // todo: properly check result success for block eg hash of all ordered successes
+        // if !result.success() {
+        //     return Err(eyre::eyre!("Execution failed"));
+        // }
+    }
+    Ok(())
 }
