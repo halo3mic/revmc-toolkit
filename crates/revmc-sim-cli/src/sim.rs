@@ -1,10 +1,7 @@
 use revm::{
-    primitives::{
-        EnvWithHandlerCfg, TxEnv, BlockEnv, CfgEnvWithHandlerCfg, SpecId, 
-        CfgEnv, B256, Address, Bytes, AccountInfo, Bytecode, TransactTo, 
-        address, U256, FixedBytes
-    },
-    db::CacheDB,
+    db::CacheDB, handler::pre_execution, primitives::{
+        address, AccountInfo, Address, BlockEnv, Bytecode, Bytes, CfgEnv, CfgEnvWithHandlerCfg, EnvWithHandlerCfg, SpecId, TransactTo, TxEnv, B256, U256
+    }
 };
 use reth_provider::{
     ReceiptProvider, StateProvider, ProviderFactory, BlockReader, 
@@ -17,12 +14,19 @@ use revmc::primitives::{hex, keccak256};
 
 use std::{str::FromStr, sync::Arc, path::PathBuf};
 use eyre::{Result, OptionExt};
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 use crate::utils;
 
 // todo: It might make sense to work with structs&builders here
 // todo: create sim-context outside of this module and load it here (no compiling from here) - shared ctx could make the block-range sim super fast
+
+
+#[derive(Clone, Copy)]
+pub enum BlockPart {
+    TOB(f32),
+    BOB(f32)
+}
 
 pub struct SimConfig {
     pub provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
@@ -64,7 +68,7 @@ pub fn run_tx_sim(tx_hash: B256, run_type: SimRunType, config: &SimConfig) -> Re
     make_tx_sim(tx_hash, run_type, config)?()
 }
 
-pub fn run_block_sim(block_num: u64, run_type: SimRunType, config: &SimConfig, block_chunk: Option<f32>) -> Result<SimExecutionResult> {
+pub fn run_block_sim(block_num: u64, run_type: SimRunType, config: &SimConfig, block_chunk: Option<BlockPart>) -> Result<SimExecutionResult> {
     make_block_sim(block_num, run_type, config, block_chunk)?()
 }
 
@@ -90,23 +94,32 @@ pub fn make_tx_sim(tx_hash: B256, run_type: SimRunType, config: &SimConfig) -> R
     make_txs_sim(txs, run_type, provider_factory, &block, exepected_gas_used, pre_execution_txs)
 }
 
-pub fn make_block_sim(block_num: u64, run_type: SimRunType, config: &SimConfig, block_chunk: Option<f32>) -> Result<SimFn> {
+pub fn make_block_sim(block_num: u64, run_type: SimRunType, config: &SimConfig, block_chunk: Option<BlockPart>) -> Result<SimFn> {
     let SimConfig { provider_factory, .. } = config;
 
     let block = provider_factory
         .block(block_num.into())?
         .ok_or_eyre("No block found")?;
     let mut txs = block.body.clone();
+    let mut pre_execution = vec![];
     let mut gas_used = block.header.gas_used;
     if let Some(chunk) = block_chunk {
-        let chunk_size = (txs.len() as f32 * chunk).ceil() as usize;
-        txs = txs.into_iter().take(chunk_size).collect();
+        match chunk {
+            BlockPart::TOB(chunk) => {
+                let chunk_size = (txs.len() as f32 * chunk).ceil() as usize;
+                txs = txs.into_iter().take(chunk_size).collect()
+            },
+            BlockPart::BOB(chunk) => {
+                let chunk_size = (txs.len() as f32 * chunk).ceil() as usize;
+                pre_execution = txs.drain(..chunk_size).collect();
+            }
+        };
         gas_used = provider_factory.receipt_by_hash(txs.last().unwrap().hash)?
             .map(|receipt| receipt.cumulative_gas_used)
             .unwrap_or_default();
     }
 
-    make_txs_sim(Arc::new(txs), run_type, &provider_factory, &block, gas_used, vec![])
+    make_txs_sim(Arc::new(txs), run_type, &provider_factory, &block, gas_used, pre_execution)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -247,12 +260,15 @@ where
 {
     let pre_res = preexecute_fn.map(|f| f(&mut evm)).transpose()?.unwrap_or_default();
     evm.context.external.touches = None;
+
     return Ok(Box::new(move || {
+        let prev_db = evm.db().clone();
         let expected_target_gas = expected_target_gas - pre_res.gas_used;
         let res = execute_fn(&mut evm)?;
         let contract_touches = evm.context.external.touches
             .clone().unwrap_or_default(); // todo: should we take it instead?
-        reset_cache_db(evm.db_mut());
+        // reset_cache_db(evm.db_mut());
+        *evm.db_mut() = prev_db;
 
         Ok(SimExecutionResult {
             expected_gas_used: expected_target_gas,
@@ -459,6 +475,7 @@ fn hash_bytecodes(bytecodes: &[Vec<u8>]) -> Vec<B256> {
     bytecodes.iter().map(|b| keccak256(b)).collect()
 }
 
+// todo: could just clear accounts and contracts?
 fn reset_cache_db<DB>(cache_db: &mut CacheDB<DB>) {
     unsafe {
         let org_db = std::ptr::read(cache_db);

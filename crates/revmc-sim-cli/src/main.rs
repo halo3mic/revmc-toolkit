@@ -3,14 +3,15 @@ mod cli;
 mod sim;
 
 use std::{path::PathBuf, str::FromStr, sync::Arc, time::Duration};
+use reth_provider::BlockReader;
 use tracing::{info, span, warn, Level};
 use criterion::Criterion;
 use cli::{Cli, Commands};
 use clap::Parser;
-use eyre::Result;
+use eyre::{OptionExt, Result};
 use revm::primitives::B256;
 
-use sim::{SimCall, SimConfig, SimRunType};
+use sim::{SimCall, SimConfig, SimRunType, BlockPart};
 
 
 fn main() -> Result<()> {
@@ -45,8 +46,11 @@ fn main() -> Result<()> {
                     sim::run_tx_sim(tx_hash, run_type, &config)?
                 } else if let Some(block_num) = run_args.block_num {
                     let block_num = block_num.parse::<u64>()?;
+                    let block_chunk = run_args.tob_block_chunk
+                        .map(|c| BlockPart::TOB(c))
+                        .or(run_args.bob_block_chunk.map(|c| BlockPart::BOB(c)));
                     info!("Running sim for block: {block_num:?}");
-                    sim::run_block_sim(block_num, run_type, &config, run_args.block_chunk)?
+                    sim::run_block_sim(block_num, run_type, &config, block_chunk)?
                 } else {
                     let call_type = SimCall::Fibbonacci; // todo: different call opt
                     info!("Running sim for call: {call_type:?}");
@@ -72,8 +76,11 @@ fn main() -> Result<()> {
                 run_tx_benchmarks(tx_hash, &config)?;
             } else if let Some(block_num) = bench_args.block_num {
                 let block_num = block_num.parse::<u64>()?;
+                let block_chunk = bench_args.tob_block_chunk
+                    .map(|c| BlockPart::TOB(c))
+                    .or(bench_args.bob_block_chunk.map(|c| BlockPart::BOB(c)));
                 info!("Running bench for block: {block_num:?}");
-                run_block_benchmarks(block_num, &config, bench_args.block_chunk)?;
+                run_block_benchmarks(block_num, &config, block_chunk)?;
             } else {
                 let call_type = SimCall::Fibbonacci; // todo: different call opt
                 info!("Running bench for call: {call_type:?}");
@@ -90,6 +97,15 @@ fn main() -> Result<()> {
 
 }
 
+
+/**
+ * 1. Check btm of the block also 
+ * 2. Compare txs for a single block (tx, gas-used, sim-time)
+ * 
+ * 
+ * 
+ */
+
 fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
     let dir_path = PathBuf::from(config.dir_path.to_string());
     let span = span!(Level::INFO, "bench_tx");
@@ -100,9 +116,9 @@ fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
         .measurement_time(Duration::from_secs(5));
 
     for (symbol, run_type) in [
-        ("native", SimRunType::Native),
         ("aot", SimRunType::AOTCompiled { dir_path }),
-        ("jit", SimRunType::JITCompiled),
+        ("native", SimRunType::Native),
+        // ("jit", SimRunType::JITCompiled),
     ] {
         info!("Running {}", symbol.to_uppercase());
         let mut fnc = sim::make_tx_sim(tx_hash, run_type, config)?;
@@ -114,7 +130,7 @@ fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
     Ok(())
 }
 
-fn run_block_benchmarks(block_num: u64, config: &SimConfig, block_chunk: Option<f32>) -> Result<()> {
+fn run_block_benchmarks(block_num: u64, config: &SimConfig, block_chunk: Option<BlockPart>) -> Result<()> {
     let dir_path = PathBuf::from(config.dir_path.to_string());
     let span = span!(Level::INFO, "bench_block");
     let _guard = span.enter();
@@ -165,8 +181,14 @@ fn run_call_benchmarks(call: SimCall, config: &SimConfig) -> Result<()> {
 }
 
 #[derive(Debug, serde::Serialize)]
+enum MeasureId {
+    Block(u64),
+    Tx(B256),
+}
+
+#[derive(Debug, serde::Serialize)]
 struct MeasureRecord {
-    block_num: u64,
+    id: MeasureId,
     run_type: String,
     exe_time: f64,
 }
@@ -186,7 +208,29 @@ fn compare_block_range(args: BlockRangeArgs, config: &SimConfig) -> Result<()> {
         ] {
             info!("Running {} for block {block_num}", symbol.to_uppercase());
             let run_type_clone = run_type.clone();
-            let mut fnc = sim::make_block_sim(block_num, run_type_clone, config, args.block_chunk)?;
+            let (mut fnc, m_id) = 
+                if args.run_rnd_txs {
+                    let block = config.provider_factory.block(block_num.into())?
+                        .ok_or_eyre("Block not found")?;
+                    if block.body.is_empty() {
+                        warn!("Found empty block {}, skipping", block_num);
+                        continue;
+                    }
+                    let txs_len = args.block_chunk
+                        .map(|chunk| {
+                            match chunk {
+                                BlockPart::TOB(c) => (block.body.len() as f32 * c) as usize,
+                                BlockPart::BOB(c) => (block.body.len() as f32 * (1. - c)) as usize,
+                            }
+                        })
+                        .unwrap_or(block.body.len());
+                    let tx_index = random_sequence(0, txs_len, 1, Some([4;32]))?[0]; // todo: include tx-seed in config?
+                    let tx_hash = block.body[tx_index].hash;
+                    info!("Running random tx: {tx_hash:?}");
+                    (sim::make_tx_sim(tx_hash, run_type_clone, config)?, MeasureId::Tx(tx_hash))
+                } else {
+                    (sim::make_block_sim(block_num, run_type_clone, config, args.block_chunk)?, MeasureId::Block(block_num))
+                };
             check_fn_validity(&mut fnc)?;
             let exe_time = measure_execution_time(
                 || { fnc() }, 
@@ -194,8 +238,8 @@ fn compare_block_range(args: BlockRangeArgs, config: &SimConfig) -> Result<()> {
                 args.measurement_ms
             );
             writer.serialize(MeasureRecord {
-                block_num,
                 run_type: symbol.to_string(),
+                id: m_id,
                 exe_time,
             })?;
         }
@@ -247,7 +291,8 @@ struct BlockRangeArgs {
     out_path: PathBuf,
     warmup_ms: u32,
     measurement_ms: u32,
-    block_chunk: Option<f32>,
+    block_chunk: Option<BlockPart>,
+    run_rnd_txs: bool,
 }
 
 impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
@@ -288,9 +333,18 @@ impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
             } else {
                 (start..end).collect()
             };
+        let block_chunk = 
+            if let Some(tob) = cli_args.tob_block_chunk {
+                Some(BlockPart::TOB(tob))
+            } else if let Some(bob) = cli_args.bob_block_chunk {
+                Some(BlockPart::BOB(bob))
+            } else {
+                None
+            };
 
         Ok(Self {
-            block_chunk: cli_args.block_chunk,
+            block_chunk,
+            run_rnd_txs: cli_args.run_rnd_txs,
             block_iter,
             out_path,
             warmup_ms,
@@ -306,23 +360,29 @@ pub fn make_dir(dir_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+use rand_chacha::ChaCha8Rng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
+use std::ops::Range;
 
 // todo: could be very inefficient not to leave it as iter
-fn random_sequence(start: u64, end: u64, size: usize, seed: Option<[u8; 32]>) -> Result<Vec<u64>> {
+fn random_sequence<T>(start: T, end: T, size: usize, seed: Option<[u8; 32]>) -> Result<Vec<T>>
+where
+    T: Copy + PartialOrd,
+    Range<T>: Iterator<Item = T>,
+    Vec<T>: FromIterator<<Range<T> as Iterator>::Item>,
+{
     let mut rng = if let Some(seed) = seed {
         ChaCha8Rng::from_seed(seed)
     } else {
-        ChaCha8Rng::from_rng(rand::thread_rng())?
+        ChaCha8Rng::from_entropy()
     };
-    let mut range: Vec<u64> = (start..end).collect();
-    range.shuffle(&mut rng);
-    Ok(range.into_iter()
-        .take(size)
-        .into_iter()
-        .collect())
+
+    let range: Vec<T> = (start..end).collect();
+    let mut shuffled = range;
+    shuffled.shuffle(&mut rng);
+    
+    Ok(shuffled.into_iter().take(size).collect())
 }
 
 fn check_fn_validity(fnc: &mut Box<dyn FnMut() -> Result<crate::sim::SimExecutionResult>>) -> Result<()> {

@@ -90,13 +90,7 @@ where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
         };
         results.push(tx_res);
 
-        // need to apply the state changes of this call before executing the
-        // next call
-        if transactions.peek().is_some() {
-            // need to apply the state changes of this call before executing
-            // the next call
-            evm.context.evm.db.commit(state)
-        }
+        evm.context.evm.db.commit(state)
     }
 
     // populate the response

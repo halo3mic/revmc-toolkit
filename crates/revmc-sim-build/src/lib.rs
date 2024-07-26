@@ -76,7 +76,6 @@ pub fn compile_contract_aot(code: &[u8], options: Option<CompilerOptions>) -> Re
     // todo: does it make sense to load this every time? - instead just do it once? loader struct?
     let compiled_contracts = load_compiled(utils::default_dir()).unwrap_or_default(); 
     let is_compiled = compiled_contracts.contains(&utils::bytecode_hash_str(&code));
-    debug!("Compiling AOT contract; is compiled: {is_compiled}");
     if !is_compiled {
         let compiler: Compiler = options.unwrap_or_default().into();
         return compiler.compile_aot(&code);
