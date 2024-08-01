@@ -7,14 +7,15 @@ use libloading::Library;
 use revmc::EvmCompilerFn;
 
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
+use std::{sync::Arc, path::PathBuf, collections::HashSet};
 use eyre::Result;
+use tracing::trace;
 
 
 // todo: rename as it is not only aot
 
 pub fn build_external_context(
-    dir_path: &str, 
+    dir_path: &PathBuf, 
     codehash_select: Option<Vec<B256>>
 ) -> Result<ExternalContext> {
     let loader = crate::fn_loader::EvmCompilerFnLoader::new(dir_path);
@@ -28,8 +29,11 @@ pub fn build_external_context(
 #[derive(Default)]
 pub struct ExternalContext {
     compiled_fns: FxHashMap<B256, (EvmCompilerFn, ReferenceDropObject)>,
-    pub touches: Option<FxHashMap<Address, TouchCounter>>,
+    pub touches: Option<Touches>,
+    pub call_touches: Option<HashSet<Address>>
 }
+
+pub type Touches = FxHashMap<Address, TouchCounter>;
 
 impl ExternalContext {
 
@@ -43,6 +47,11 @@ impl ExternalContext {
             .and_modify(|c| c.increment(non_native))
             .or_insert(TouchCounter::new_with_increment(non_native));
     }
+
+    fn register_call_touch(&mut self, address: Address) {
+        let call_touches = self.call_touches.get_or_insert_with(HashSet::new);
+        call_touches.insert(address);
+    }
 }
 
 impl From<Vec<(B256, EvmCompilerFn)>> for ExternalContext {
@@ -50,7 +59,7 @@ impl From<Vec<(B256, EvmCompilerFn)>> for ExternalContext {
         let compiled_fns = fns.into_iter()
             .map(|(h, f)| (h, (f, ReferenceDropObject::None)))
             .collect();
-        Self { compiled_fns, touches: None }
+        Self { compiled_fns, touches: None, call_touches: None }
     }
 }
 
@@ -59,12 +68,12 @@ impl From<Vec<(B256, (EvmCompilerFn, Library))>> for ExternalContext {
         let compiled_fns = fns.into_iter()
             .map(|(h, (fnc, lib))| (h, (fnc, ReferenceDropObject::Library(lib))))
             .collect();
-        Self { compiled_fns, touches: None }
+        Self { compiled_fns, touches: None, call_touches: None }
     }
 }
 
 // todo: track gas consumption?
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct TouchCounter {
     pub overall: usize,
     pub non_native: usize,
@@ -92,22 +101,28 @@ enum ReferenceDropObject {
     None,
 }
 
-pub fn register_handler<DB: Database>(handler: &mut EvmHandler<'_, ExternalContext, DB>) {
-    let prev = handler.execution.execute_frame.clone();
+pub fn register_handler<DB: Database>(handler: &mut EvmHandler<'_, ExternalContext, DB>) {    
+    let call_original = handler.execution.call.clone();
+    handler.execution.call = Arc::new(move |ctx, inputs| {
+        trace!("{{from: {:?}, to: {:?}, input: {}, value: {:?}}}", &inputs.caller, &inputs.target_address, &inputs.input, &inputs.value);
+        ctx.external.register_call_touch(inputs.bytecode_address);
+        call_original(ctx, inputs)
+    });
+    
+    let execute_frame_original = handler.execution.execute_frame.clone();
     handler.execution.execute_frame = Arc::new(move |frame, memory, tables, context| {
         let interpreter = frame.interpreter_mut();
         let bytecode_hash = interpreter.contract.hash.unwrap_or_default();
-        let ext_fn = context.external.get_function(bytecode_hash);
+        let ext_fn = context.external.get_function(bytecode_hash);   
 
         context.external.register_touch(
             interpreter.contract.target_address, 
             ext_fn.is_some()
         );
-
         Ok(if let Some(f) = ext_fn {
             unsafe { f.call_with_interpreter_and_memory(interpreter, memory, context) }
         } else {
-            prev(frame, memory, tables, context)?
+            execute_frame_original(frame, memory, tables, context)?
         })
     });
 }

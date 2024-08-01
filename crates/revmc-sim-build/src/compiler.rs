@@ -49,8 +49,8 @@ impl CompilerOptions {
             target: "native".to_string(),
             target_cpu: None,
             target_features: None,
-            no_gas: true,
-            no_len_checks: true,
+            no_gas: false,
+            no_len_checks: false,
             frame_pointers: false,
             debug_assertions: false,
             no_link: false,
@@ -109,12 +109,12 @@ impl Compiler {
 
     // ! LEAKING MEMORY - only for demo to avoid segmentation fault
     // todo: return a struct that when dropped also drops the context and compiler
-    pub fn compile_jit_many(&self, bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
+    pub fn compile_jit_many(&self, mut bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
         let mut compiler = self.create_compiler(ctx, "compile_many", false)?;
 
         // First we translate all at once, only then we finalize them
-        let fn_ids = bytecodes.iter().map(|bytecode| {
+        let fn_ids = bytecodes.into_iter().map(|bytecode| {
             let bytecode_hash = revm::primitives::keccak256(bytecode);
             let name = bytecode_hash.to_string();
             debug!("Compiling JIT contract with name {}", name);

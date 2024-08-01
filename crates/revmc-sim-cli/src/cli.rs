@@ -25,7 +25,11 @@ pub struct BuildArgsCli {
 #[derive(Args, Debug)]
 pub struct RunArgsCli {
     #[arg(short, long, help = "TxHash of the transaction to run/bench.")]
-    pub tx_hash: Option<String>, 
+    pub tx_hash: Option<String>,
+    #[arg(long, help = "Proportion of the block to use - top of the block.")]
+    pub tob_block_chunk: Option<f32>,
+    #[arg(long, help = "Proportion of the block to use - bottom of the block.")]
+    pub bob_block_chunk: Option<f32>,
     #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
     pub block_num: Option<String>,
     #[arg(short, long, help = "aot_compiled or native")]
@@ -38,6 +42,10 @@ pub struct BenchArgsCli {
     pub tx_hash: Option<String>, 
     #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
     pub block_num: Option<String>,
+    #[arg(long, help = "Proportion of the block to use - top of the block.")]
+    pub tob_block_chunk: Option<f32>,
+    #[arg(long, help = "Proportion of the block to use - bottom of the block.")]
+    pub bob_block_chunk: Option<f32>,
 }
 
 #[derive(Args, Debug)]
@@ -50,8 +58,16 @@ pub struct BlockRangeArgsCli {
     pub sample_size: Option<u32>,
     #[arg(short, long, help = "Path to dir where measurements will be stored.")]
     pub out_dir: Option<String>,
-    #[arg(short, long, help = "Warmup iterations.")]
-    pub warmup_iter: Option<u32>,
-    #[arg(short, long, help = "Bench iterations.")]
-    pub bench_iter: Option<u32>,
+    #[arg(long, help = "Warmup time [ms].")]
+    pub warmup_ms: Option<u32>,
+    #[arg(long, help = "Measurment time [ms].")]
+    pub measurement_ms: Option<u32>,
+    #[arg(long, help = "Proportion of the block to use - top of the block.")]
+    pub tob_block_chunk: Option<f32>,
+    #[arg(long, help = "Proportion of the block to use - bottom of the block.")]
+    pub bob_block_chunk: Option<f32>,
+    #[arg(long, help = "Seed for random number generator.")]
+    pub rnd_seed: Option<String>,
+    #[arg(default_value = "false", long, help = "If present will run single random transaction per block. If block-chunk is set, it will pick the transaction from it.")]
+    pub run_rnd_txs: bool,
 }

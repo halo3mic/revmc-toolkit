@@ -9,12 +9,12 @@ use revm::{
 };
 
 use eyre::{OptionExt, Result};
-
+use std::sync::Arc;
 
 // modified code from reth's EthBundle::call_bundle
 pub fn sim_txs<'a, EXT, ExtDB: DatabaseRef>(
     transactions: &[TransactionSigned],
-    evm: &mut Evm<'a, EXT, CacheDB<ExtDB>>,
+    evm: &mut Evm<'a, EXT, CacheDB<Arc<ExtDB>>>,
 ) -> Result<EthCallBundleResponse> 
 where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
 {
@@ -90,13 +90,7 @@ where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
         };
         results.push(tx_res);
 
-        // need to apply the state changes of this call before executing the
-        // next call
-        if transactions.peek().is_some() {
-            // need to apply the state changes of this call before executing
-            // the next call
-            evm.context.evm.db.commit(state)
-        }
+        evm.context.evm.db.commit(state)
     }
 
     // populate the response
