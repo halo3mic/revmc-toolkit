@@ -14,7 +14,7 @@ use revmc::primitives::{hex, keccak256};
 
 use std::{str::FromStr, sync::Arc, path::PathBuf};
 use eyre::{Result, OptionExt};
-use tracing::{debug, warn};
+use tracing::{debug, warn, info};
 
 use crate::utils;
 
@@ -22,12 +22,13 @@ use crate::utils;
 // todo: create sim-context outside of this module and load it here (no compiling from here) - shared ctx could make the block-range sim super fast
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum BlockPart {
     TOB(f32),
     BOB(f32)
 }
 
+#[derive(Clone, Debug)]
 pub struct SimConfig {
     pub provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
     pub dir_path: String,
@@ -65,15 +66,31 @@ impl FromStr for SimRunType {
 type SimFn = Box<dyn FnMut() -> Result<SimExecutionResult>>;
 
 pub fn run_tx_sim(tx_hash: B256, run_type: SimRunType, config: &SimConfig) -> Result<SimExecutionResult> {
-    make_tx_sim(tx_hash, run_type, config)?()
+    let mut sim = make_tx_sim(tx_hash, run_type, config)?;
+    let (res, elapsed_ms) = timeit(|| sim());
+    info!("Simulated tx {} in {}ms", tx_hash, elapsed_ms.as_millis());
+    res
 }
 
 pub fn run_block_sim(block_num: u64, run_type: SimRunType, config: &SimConfig, block_chunk: Option<BlockPart>) -> Result<SimExecutionResult> {
-    make_block_sim(block_num, run_type, config, block_chunk)?()
+    let mut sim = make_block_sim(block_num, run_type, config, block_chunk)?;
+    let (res, elapsed_ms) = timeit(|| sim());
+    info!("Simulated block {} in {}ms", block_num, elapsed_ms.as_millis());
+    res
 }
 
 pub fn run_call_sim(call: SimCall, run_type: SimRunType, config: &SimConfig) -> Result<SimExecutionResult> {
-    make_call_sim(call, run_type, config)?()
+    let mut sim = make_call_sim(call, run_type, config)?;
+    let (res, elapsed_ms) = timeit(|| sim());
+    info!("Simulated call in {}ms", elapsed_ms.as_millis());
+    res
+}
+
+fn timeit<F: FnOnce() -> R, R>(f: F) -> (R, std::time::Duration) {
+    let t0 = std::time::Instant::now();
+    let res = f();
+    let elapsed_ms = t0.elapsed();
+    (res, elapsed_ms)
 }
 
 pub fn make_tx_sim(tx_hash: B256, run_type: SimRunType, config: &SimConfig) -> Result<SimFn> {
@@ -458,7 +475,7 @@ where
                         Some(code_res)
                     } else {
                         // ! Note that in some cases the bytecode for the account is filled during the run eg. 0xff1265768b16c34523a1931f6cacd22502ef1106387a3cf7f302402e3a341682
-                        warn!("No code found for address {account:?}");
+                        // warn!("No code found for address {account:?}");
                         None
                     }
                 }
