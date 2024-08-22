@@ -109,7 +109,7 @@ impl Compiler {
 
     // ! LEAKING MEMORY - only for demo to avoid segmentation fault
     // todo: return a struct that when dropped also drops the context and compiler
-    pub fn compile_jit_many(&self, mut bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
+    pub fn compile_jit_many(&self, bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
         let mut compiler = self.create_compiler(ctx, "compile_many", false)?;
 
