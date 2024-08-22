@@ -1,5 +1,6 @@
 use revm::{
-    db::CacheDB, handler::pre_execution, primitives::{
+    db::CacheDB, 
+    primitives::{
         address, AccountInfo, Address, BlockEnv, Bytecode, Bytes, CfgEnv, CfgEnvWithHandlerCfg, EnvWithHandlerCfg, SpecId, TransactTo, TxEnv, B256, U256
     }
 };
@@ -86,7 +87,8 @@ pub fn run_call_sim(call: SimCall, run_type: SimRunType, config: &SimConfig) -> 
     res
 }
 
-fn timeit<F: FnOnce() -> R, R>(f: F) -> (R, std::time::Duration) {
+fn timeit<F: FnMut() -> R, R>(mut f: F) -> (R, std::time::Duration) { 
+    f(); // Do a prerun
     let t0 = std::time::Instant::now();
     let res = f();
     let elapsed_ms = t0.elapsed();
@@ -459,8 +461,8 @@ where
     let contracts = evm.context.external.call_touches
         .expect("Expected at least one touch")
         .iter()
-        .filter_map(|account| {
-            match db.accounts.get(account) {
+        .filter_map(|account_add| {
+            match db.accounts.get(account_add) {
                 Some(account) => {
                     let code_res = account.info.code.as_ref()
                         .ok_or_eyre("No code found")
@@ -468,14 +470,14 @@ where
                     Some(code_res)
                 },
                 None => {
-                    if let Some(code_res) = state_provider.account_code(*account).transpose() {
+                    if let Some(code_res) = state_provider.account_code(*account_add).transpose() {
                         let code_res = code_res
                             .map(|code| code.original_byte_slice().to_vec())
                             .map_err(|e| e.into());
                         Some(code_res)
                     } else {
                         // ! Note that in some cases the bytecode for the account is filled during the run eg. 0xff1265768b16c34523a1931f6cacd22502ef1106387a3cf7f302402e3a341682
-                        // warn!("No code found for address {account:?}");
+                        warn!("No code found for address {account_add:?}");
                         None
                     }
                 }
@@ -490,13 +492,4 @@ where
 
 fn hash_bytecodes(bytecodes: &[Vec<u8>]) -> Vec<B256> {
     bytecodes.iter().map(|b| keccak256(b)).collect()
-}
-
-// todo: could just clear accounts and contracts?
-fn reset_cache_db<DB>(cache_db: &mut CacheDB<DB>) {
-    unsafe {
-        let org_db = std::ptr::read(cache_db);
-        let new_db = CacheDB::new(org_db.db);
-        std::ptr::write(cache_db, new_db);
-    }
 }

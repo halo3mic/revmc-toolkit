@@ -16,7 +16,7 @@ use sim::{SimCall, SimConfig, SimRunType, BlockPart};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    dotenv::dotenv().ok();
+    dotenv::dotenv()?;
 
     let db_path = std::env::var("RETH_DB_PATH")?;
     let dir_path = revmc_sim_build::default_dir();
@@ -97,14 +97,6 @@ fn main() -> Result<()> {
 
 }
 
-
-/**
- * 1. Check btm of the block also 
- * 2. Compare txs for a single block (tx, gas-used, sim-time)
- * 
- * 
- * 
- */
 
 fn run_tx_benchmarks(tx_hash: B256, config: &SimConfig) -> Result<()> {
     let dir_path = PathBuf::from(config.dir_path.to_string());
