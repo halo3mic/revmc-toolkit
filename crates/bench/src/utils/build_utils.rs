@@ -1,4 +1,4 @@
-use revmc_sim_build::{CompilerOptions, CodeWithOptions};
+use revmc_toolbox_build::{CompilerOptions, CodeWithOptions};
 use serde::{Deserialize, Deserializer};
 use reth_provider::StateProvider;
 use revm::primitives::Address;
@@ -17,7 +17,7 @@ pub fn compile_aot_from_codes(
 ) -> Result<Vec<Result<()>>>
 {
     let contracts = codes.into_iter().map(|c| c.into()).collect();
-    revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
+    revmc_toolbox_build::compile_contracts_aot(contracts, fallback_opt)
 }
 
 pub fn compile_jit_from_codes(
@@ -25,7 +25,7 @@ pub fn compile_jit_from_codes(
     fallback_opt: Option<CompilerOptions>,
 ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
     let contracts = codes.into_iter().map(|c| c.into()).collect();
-    revmc_sim_build::compile_contracts_jit_par(contracts, fallback_opt)
+    revmc_toolbox_build::compile_contracts_jit_par(contracts, fallback_opt)
 }
 
 // pub fn compile_aot_from_contracts_with_fn<F>(
@@ -38,7 +38,7 @@ pub fn compile_jit_from_codes(
 //         let code = account_to_code_fn(account)?;
 //         Ok(CodeWithOptions { code, options: None })
 //     }).collect::<Result<Vec<_>>>()?;
-//     revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
+//     revmc_toolbox_build::compile_contracts_aot(contracts, fallback_opt)
 // }
 
 // pub fn compile_aot_from_contracts(
@@ -76,7 +76,7 @@ pub fn compile_aot_from_build_file(
     build_file: BuildFile,
 ) -> Result<Vec<Result<()>>> {
     let (contracts, fconfig) = build_file.into_contracts_and_fconfig(state_provider)?;
-    revmc_sim_build::compile_contracts_aot(contracts, fconfig)
+    revmc_toolbox_build::compile_contracts_aot(contracts, fconfig)
 }
 
 // pub fn compile_jit_from_build_file(
@@ -84,7 +84,7 @@ pub fn compile_aot_from_build_file(
 //     build_file: BuildFile,
 // ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
 //     let (contracts, fconfig) = build_file.into_contracts_and_fconfig(&state_provider)?;
-//     revmc_sim_build::compile_contracts_jit(contracts, fconfig)
+//     revmc_toolbox_build::compile_contracts_jit(contracts, fconfig)
 // }
 
 #[derive(Debug, Clone, Deserialize)]

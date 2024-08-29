@@ -1,6 +1,6 @@
-## revmc-sim
+## REVMC Toolbox
 
-Tool for comparing execution of calls, transactions and blocks with [revmc](https://github.com/paradigmxyz/revmc) JIT and AOT compiled functions. 
+Tools for comparing execution of calls, transactions and blocks with [revmc](https://github.com/paradigmxyz/revmc) JIT and AOT compiled functions. 
 
 Very much work in progress! 🚧
 
@@ -10,10 +10,10 @@ Very much work in progress! 🚧
 
 Run command for usage instructions:
 ```bash
-cargo run --release -p revmc-sim-cli
+cargo run --release -p revmc-bench
 ```
 
 ### Measure and record performance within a block range 
 ```bash 
-RUST_LOG=info cargo run --release -p revmc-sim-cli block-range 20307900..20347900 f20307900t20347900s50 --sample-size 10
+RUST_LOG=info cargo run --release -p revmc-bench block-range 20307900..20347900 f20307900t20347900s50 --sample-size 10
 ```

@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     dotenv::dotenv()?;
 
     let db_path = std::env::var("RETH_DB_PATH")?;
-    let dir_path = revmc_sim_build::default_dir();
+    let dir_path = revmc_toolbox_build::default_dir();
     let dir_path = dir_path.to_string_lossy().to_string();
     let provider_factory = Arc::new(utils::evm::make_provider_factory(&db_path)?);
     let config = SimConfig::new(provider_factory, dir_path);
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
                     sim::run_call_sim(call_type, run_type, &config)?
                 };
             result.contract_touches.into_iter().for_each(|(address, touch_counter)| {
-                let revmc_sim_load::TouchCounter { non_native, overall } = touch_counter;
+                let revmc_toolbox_load::TouchCounter { non_native, overall } = touch_counter;
                 if result.non_native_exe && non_native != overall {
                     println!("{}/{} native touches for address {address:?}", overall-non_native, overall);
                 } else if !result.non_native_exe && non_native != 0 {

@@ -7,7 +7,6 @@ use serde_json::Value;
 use rayon::prelude::*;
 use eyre::Result;
 use hex;
-use tracing::debug;
 
 pub use compiler::{CompilerOptions, Compiler, JitCompileOut};
 pub use utils::default_dir;

@@ -1,24 +1,24 @@
 [workspace]
 members = ["crates/*"]
 default-members = [
-    "crates/revmc-sim-load", 
-    "crates/revmc-sim-build",
-    "crates/revmc-sim-cli",
+    "crates/load", 
+    "crates/build",
+    "crates/bench",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-revmc-sim-load = { path = "crates/revmc-sim-load" }
-revmc-sim-build = { path = "crates/revmc-sim-build" }
+revmc-toolbox-load = { path = "crates/load" }
+revmc-toolbox-build = { path = "crates/build" }
 
-reth-db = { git = "https://github.com/paradigmxyz/reth" } 
-reth-provider = { git = "https://github.com/paradigmxyz/reth" } 
-reth-chainspec = { git = "https://github.com/paradigmxyz/reth" } 
-reth-revm = { git = "https://github.com/paradigmxyz/reth" } 
-reth-primitives = { git = "https://github.com/paradigmxyz/reth", features = ["c-kzg"] } 
-reth-rpc-types = { git = "https://github.com/paradigmxyz/reth" }
-reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth" }
-reth-evm = { git = "https://github.com/paradigmxyz/reth" }
+reth-db = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" } 
+reth-provider = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" } 
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" } 
+reth-revm = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" } 
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", features = ["c-kzg"], rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" } 
+reth-rpc-types = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" }
+reth-evm = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" }
 revmc = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-builtins = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-context = { git = "https://github.com/paradigmxyz/revmc" }

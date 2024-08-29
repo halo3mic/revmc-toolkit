@@ -57,7 +57,7 @@ impl FromStr for SimRunType {
             "jit_compiled" => Ok(SimRunType::JITCompiled),
             "aot_compiled" => {
                 // todo: resolve this
-                let dir_path = revmc_sim_build::default_dir();
+                let dir_path = revmc_toolbox_build::default_dir();
                 Ok(SimRunType::AOTCompiled { dir_path })
             },
             _ => Err(eyre::eyre!("Invalid run type")),
@@ -161,7 +161,7 @@ pub fn make_call_sim(call: SimCall, run_type: SimRunType, config: &SimConfig) ->
             let actual_num = U256::from(100_000);
             let expected_target_gas = 6_321_215;
             let expected_result = Bytes::from_str("0xf77c8c850c19775591850bc3769fd422f84fdf260a20dd8ac7ee006d287ebc5d")?;
-            revmc_sim_build::compile_contract_aot(FIBONACCI_CODE, None)?;
+            revmc_toolbox_build::compile_contract_aot(FIBONACCI_CODE, None)?;
             let bytecode = Bytecode::new_raw(FIBONACCI_CODE.into());
             let fibonacci_address = address!("0000000000000000000000000000000000001234");
             let mut account_info = AccountInfo::default();
@@ -204,7 +204,7 @@ pub fn make_call_sim(call: SimCall, run_type: SimRunType, config: &SimConfig) ->
     )
 }
 
-type EvmWithExtCtx<'a> = revm::Evm<'a, revmc_sim_load::ExternalContext, CacheDB<Arc<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>>>;
+type EvmWithExtCtx<'a> = revm::Evm<'a, revmc_toolbox_load::ExternalContext, CacheDB<Arc<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>>>;
 
 fn make_txs_sim(
     txs: Arc<Vec<TransactionSigned>>, 
@@ -256,7 +256,7 @@ where
         SimRunType::Native => (make_evm(db, None, env), false),
         SimRunType::AOTCompiled { dir_path } => {
             let selected = aot_compile_touched_contracts(state_provider.clone(), db.clone(), env.clone(), fnc)?; // todo: avoid cloning!
-            let ext_ctx = revmc_sim_load::build_external_context(&dir_path, Some(selected))?;
+            let ext_ctx = revmc_toolbox_load::build_external_context(&dir_path, Some(selected))?;
             (make_evm(db, Some(ext_ctx), env), true)
         }, 
         SimRunType::JITCompiled => {
@@ -312,7 +312,7 @@ pub struct SimExecutionResult {
     pub gas_used: Vec<u64>,
     pub expected_gas_used: Vec<u64>,
     pub success: Vec<bool>,
-    pub contract_touches: revmc_sim_load::Touches,
+    pub contract_touches: revmc_toolbox_load::Touches,
     pub non_native_exe: bool,
 }
 
@@ -328,7 +328,7 @@ impl SimExecutionResult {
 
     pub fn wrong_touches(&self) -> Option<Vec<Address>> {
         let wrong_touches = self.contract_touches.iter().filter_map(|(address, touch_counter)| {
-            let revmc_sim_load::TouchCounter { non_native, overall } = touch_counter;
+            let revmc_toolbox_load::TouchCounter { non_native, overall } = touch_counter;
             if (self.non_native_exe && non_native != overall) || (!self.non_native_exe && non_native != &0) {
                 Some(*address)
             } else {
@@ -368,14 +368,14 @@ impl From<revm::primitives::ExecutionResult> for MyExecutionResult {
 
 fn make_evm<'a>(
     db: CacheDB<Arc<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>>, 
-    ext_ctx: Option<revmc_sim_load::ExternalContext>,
+    ext_ctx: Option<revmc_toolbox_load::ExternalContext>,
     env: Option<EnvWithHandlerCfg>,
-) -> revm::Evm<'a, revmc_sim_load::ExternalContext, CacheDB<Arc<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>>> {
+) -> revm::Evm<'a, revmc_toolbox_load::ExternalContext, CacheDB<Arc<StateProviderDatabase<Arc<Box<dyn StateProvider>>>>>> {
     revm::Evm::builder()
         .with_db(db)
         .with_external_context(ext_ctx.unwrap_or_default())
         .with_env_with_handler_cfg(env.unwrap_or_default())
-        .append_handler_register(revmc_sim_load::register_handler)
+        .append_handler_register(revmc_toolbox_load::register_handler)
         .build()
 }
 
@@ -410,7 +410,7 @@ fn aot_compile_touched_contracts<ExtDB: revm::Database + revm::DatabaseRef, F>(
     run_fn: F
 ) -> Result<Vec<B256>> 
 where 
-    F: FnOnce(&mut revm::Evm<revmc_sim_load::ExternalContext, CacheDB<Arc<ExtDB>>>) -> Result<()>,
+    F: FnOnce(&mut revm::Evm<revmc_toolbox_load::ExternalContext, CacheDB<Arc<ExtDB>>>) -> Result<()>,
     <ExtDB as revm::DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
     ExtDB: Clone,
 {
@@ -428,7 +428,7 @@ fn jit_compile_touched_contracts<ExtDB: revm::Database + revm::DatabaseRef, F>(
     run_fn: F
 ) -> Result<Vec<(B256, revmc::EvmCompilerFn)>>
 where 
-    F: FnOnce(&mut revm::Evm<revmc_sim_load::ExternalContext, CacheDB<Arc<ExtDB>>>) -> Result<()>,
+    F: FnOnce(&mut revm::Evm<revmc_toolbox_load::ExternalContext, CacheDB<Arc<ExtDB>>>) -> Result<()>,
     <ExtDB as revm::DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
     ExtDB: Clone,
 {
@@ -450,16 +450,16 @@ fn record_touched_bytecode<ExtDB: revm::Database + revm::DatabaseRef, F>(
     run_fn: F
 ) -> Result<Vec<Vec<u8>>> 
 where 
-    F: FnOnce(&mut revm::Evm<revmc_sim_load::ExternalContext, CacheDB<Arc<ExtDB>>>) -> Result<()>,
+    F: FnOnce(&mut revm::Evm<revmc_toolbox_load::ExternalContext, CacheDB<Arc<ExtDB>>>) -> Result<()>,
     <ExtDB as revm::DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
     ExtDB: Clone,
 {
     debug!("Recording touched contracts");
     let mut evm = revm::Evm::builder()
         .with_db(db.clone())
-        .with_external_context(revmc_sim_load::ExternalContext::default())
+        .with_external_context(revmc_toolbox_load::ExternalContext::default())
         .with_env_with_handler_cfg(env.unwrap_or_default())
-        .append_handler_register(revmc_sim_load::register_handler)
+        .append_handler_register(revmc_toolbox_load::register_handler)
         .build();
 
     run_fn(&mut evm)?;
