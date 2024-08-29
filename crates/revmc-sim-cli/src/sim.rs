@@ -56,6 +56,7 @@ impl FromStr for SimRunType {
             "native" => Ok(SimRunType::Native),
             "jit_compiled" => Ok(SimRunType::JITCompiled),
             "aot_compiled" => {
+                // todo: resolve this
                 let dir_path = revmc_sim_build::default_dir();
                 Ok(SimRunType::AOTCompiled { dir_path })
             },
@@ -282,7 +283,7 @@ where
 
     return Ok(Box::new(move || {
         let prev_db = evm.db().clone();
-        let expected_target_gas = expected_target_gas - pre_res.gas_used;
+        let expected_target_gas = expected_target_gas - pre_res.gas_used[0];
         let res = execute_fn(&mut evm)?;
         let contract_touches = evm.context.external.touches
             .clone().unwrap_or_default(); // todo: should we take it instead?
@@ -290,7 +291,7 @@ where
         *evm.db_mut() = prev_db;
 
         Ok(SimExecutionResult {
-            expected_gas_used: expected_target_gas,
+            expected_gas_used: vec![expected_target_gas],
             gas_used: res.gas_used,
             success: res.success,
             contract_touches,
@@ -301,16 +302,16 @@ where
 
 #[derive(Default)]
 struct MyExecutionResult {
-    gas_used: u64, 
-    success: bool,
+    gas_used: Vec<u64>, 
+    success: Vec<bool>,
 }
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct SimExecutionResult {
-    pub gas_used: u64,
-    pub expected_gas_used: u64,
-    pub success: bool,
+    pub gas_used: Vec<u64>,
+    pub expected_gas_used: Vec<u64>,
+    pub success: Vec<bool>,
     pub contract_touches: revmc_sim_load::Touches,
     pub non_native_exe: bool,
 }
@@ -321,8 +322,8 @@ impl SimExecutionResult {
         self.gas_used == self.expected_gas_used
     }
 
-    pub fn success(&self) -> bool {
-        self.success
+    pub fn success(&self) -> &Vec<bool> {
+        self.success.as_ref() // todo: check with expected 
     }
 
     pub fn wrong_touches(&self) -> Option<Vec<Address>> {
@@ -345,9 +346,13 @@ impl SimExecutionResult {
 
 impl From<reth_rpc_types::EthCallBundleResponse> for MyExecutionResult {
     fn from(res: reth_rpc_types::EthCallBundleResponse) -> Self {
+        let (gas_used, success) = res.results
+            .into_iter()
+            .map(|r| (r.gas_used, r.revert.is_none()))
+            .unzip();
         Self {
-            gas_used: res.total_gas_used,
-            success: res.results.iter().all(|r| r.revert.is_none()), // todo: change this, tx can fail
+            gas_used,
+            success
         }
     }
 }
@@ -355,8 +360,8 @@ impl From<reth_rpc_types::EthCallBundleResponse> for MyExecutionResult {
 impl From<revm::primitives::ExecutionResult> for MyExecutionResult {
     fn from(res: revm::primitives::ExecutionResult) -> Self {
         Self {
-            gas_used: res.gas_used(),
-            success: res.is_success(),
+            gas_used: vec![res.gas_used()],
+            success: vec![res.is_success()],
         }
     }
 }
@@ -374,7 +379,7 @@ fn make_evm<'a>(
         .build()
 }
 
-fn env_with_handler_cfg(chain_id: u64, block: &Block) -> EnvWithHandlerCfg {
+pub fn env_with_handler_cfg(chain_id: u64, block: &Block) -> EnvWithHandlerCfg {
     let mut block_env = block_env_from_block(block);
     block_env.prevrandao = Some(block.header.mix_hash);
     let cfg = CfgEnv::default().with_chain_id(chain_id);
