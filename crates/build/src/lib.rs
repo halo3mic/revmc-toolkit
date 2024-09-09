@@ -71,6 +71,7 @@ pub fn compile_contracts_jit_par(
         .collect())
 }
 
+// todo: make it possible here to specify the path where the compiled contracts are stored
 pub fn compile_contract_aot(code: &[u8], options: Option<CompilerOptions>) -> Result<()> {
     // todo: does it make sense to load this every time? - instead just do it once? loader struct?
     let compiled_contracts = load_compiled(utils::default_dir()).unwrap_or_default(); 

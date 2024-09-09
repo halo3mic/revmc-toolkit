@@ -3507,43 +3507,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-bench-utils"
-version = "0.1.0"
-dependencies = [
- "cc",
- "clap",
- "criterion",
- "csv",
- "dotenv",
- "eyre",
- "hex",
- "libloading",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "rayon",
- "reth-chainspec",
- "reth-db",
- "reth-evm",
- "reth-evm-ethereum",
- "reth-primitives",
- "reth-provider",
- "reth-revm",
- "reth-rpc-types",
- "revm",
- "revm-interpreter",
- "revmc",
- "revmc-build",
- "revmc-builtins",
- "revmc-context",
- "revmc-sim-build",
- "revmc-sim-load",
- "serde",
- "serde_json",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "revmc-build"
 version = "0.1.0"
 source = "git+https://github.com/paradigmxyz/revmc#6ca7ebe28b64014aaa3282ffbd9f081cb4b11861"
@@ -3582,21 +3545,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-sim-build"
-version = "0.1.0"
-dependencies = [
- "eyre",
- "hex",
- "rayon",
- "revm",
- "revmc",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
-name = "revmc-sim-cli"
+name = "revmc-toolbox-bench"
 version = "0.1.0"
 dependencies = [
  "cc",
@@ -3624,8 +3573,10 @@ dependencies = [
  "revmc-build",
  "revmc-builtins",
  "revmc-context",
- "revmc-sim-build",
- "revmc-sim-load",
+ "revmc-toolbox-build",
+ "revmc-toolbox-load",
+ "revmc-toolbox-sim",
+ "revmc-toolbox-utils",
  "serde",
  "serde_json",
  "tracing",
@@ -3633,7 +3584,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-sim-load"
+name = "revmc-toolbox-build"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "hex",
+ "rayon",
+ "revm",
+ "revmc",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "revmc-toolbox-load"
 version = "0.1.0"
 dependencies = [
  "eyre",
@@ -3642,6 +3607,81 @@ dependencies = [
  "revmc",
  "rustc-hash 2.0.0",
  "tracing",
+]
+
+[[package]]
+name = "revmc-toolbox-sim"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "clap",
+ "criterion",
+ "csv",
+ "dotenv",
+ "eyre",
+ "hex",
+ "libloading",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "reth-chainspec",
+ "reth-db",
+ "reth-evm",
+ "reth-evm-ethereum",
+ "reth-primitives",
+ "reth-provider",
+ "reth-revm",
+ "reth-rpc-types",
+ "revm",
+ "revm-interpreter",
+ "revmc",
+ "revmc-build",
+ "revmc-builtins",
+ "revmc-context",
+ "revmc-toolbox-build",
+ "revmc-toolbox-load",
+ "revmc-toolbox-utils",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "revmc-toolbox-utils"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "clap",
+ "criterion",
+ "csv",
+ "dotenv",
+ "eyre",
+ "hex",
+ "libloading",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "reth-chainspec",
+ "reth-db",
+ "reth-evm",
+ "reth-evm-ethereum",
+ "reth-primitives",
+ "reth-provider",
+ "reth-revm",
+ "reth-rpc-types",
+ "revm",
+ "revm-interpreter",
+ "revmc",
+ "revmc-build",
+ "revmc-builtins",
+ "revmc-context",
+ "revmc-toolbox-build",
+ "revmc-toolbox-load",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

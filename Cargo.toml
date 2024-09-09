@@ -3,13 +3,16 @@ members = ["crates/*"]
 default-members = [
     "crates/load", 
     "crates/build",
-    "crates/bench",
+    "crates/sim",
+    "crates/utils"
 ]
 resolver = "2"
 
 [workspace.dependencies]
 revmc-toolbox-load = { path = "crates/load" }
 revmc-toolbox-build = { path = "crates/build" }
+revmc-toolbox-sim = { path = "crates/sim" }
+revmc-toolbox-utils = { path = "crates/utils" }
 
 reth-db = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" } 
 reth-provider = { git = "https://github.com/paradigmxyz/reth", rev = "2adf2d33649f952eb8ec71f5eaf4d8e9660ae4d6" } 

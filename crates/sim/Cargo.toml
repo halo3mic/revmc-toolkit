@@ -1,5 +1,5 @@
 [package]
-name = "revmc-toolbox-bench"
+name = "revmc-toolbox-sim"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.79"
@@ -7,7 +7,6 @@ rust-version = "1.79"
 [dependencies]
 revmc-toolbox-build.workspace = true
 revmc-toolbox-load.workspace = true
-revmc-toolbox-sim.workspace = true
 revmc-toolbox-utils.workspace = true
 
 reth-db.workspace = true
@@ -40,5 +39,3 @@ csv = "1.3.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 
-[build-dependencies]
-revmc-build.workspace = true

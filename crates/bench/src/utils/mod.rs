@@ -1,19 +1,8 @@
 mod build_utils;
-mod evm_utils;
-mod sim_utils;
-mod rnd_utils;
+pub mod sim;
 
 pub mod build {
     pub use super::build_utils::*;
-}
-pub mod evm {
-    pub use super::evm_utils::*;
-}
-pub mod sim {
-    pub use super::sim_utils::*;
-}
-pub mod rnd {
-    pub use super::rnd_utils::*;
 }
 
 const DEFAULT_BUILD_CONFIG: &str = "revmc.build.config.json";
