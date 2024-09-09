@@ -55,7 +55,7 @@ impl CompilerOptions {
             debug_assertions: false,
             no_link: false,
             opt_level: OptimizationLevelDeseralizable::Aggressive,
-            spec_id: SpecId::CANCUN, // ! EOF yet not implemented
+            spec_id: SpecId::CANCUN,
             label: None,
         }
     }
@@ -93,7 +93,7 @@ impl Compiler {
 
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
         let mut compiler = self.create_compiler(ctx, &name, true)?;    
-        compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
+        compiler.translate(&name, bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
         let obj = Self::write_precompiled_obj(&mut compiler, &name, &out_dir)?;
@@ -118,7 +118,7 @@ impl Compiler {
             let bytecode_hash = revm::primitives::keccak256(bytecode);
             let name = bytecode_hash.to_string();
             debug!("Compiling JIT contract with name {}", name);
-            let fn_id = compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
+            let fn_id = compiler.translate(&name, bytecode, self.opt.spec_id)?;
             Ok((bytecode_hash, fn_id))
         }).collect::<Result<Vec<_>>>()?;  
         let fncs = fn_ids.into_iter().map(|(bytecode_hash, fn_id)| {

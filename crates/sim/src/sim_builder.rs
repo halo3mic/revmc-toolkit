@@ -17,6 +17,7 @@ use reth_provider::{
 };
 use reth_primitives::{Block, TransactionSigned, TransactionMeta};
 use reth_revm::database::StateProviderDatabase;
+use reth_rpc_types::mev::EthCallBundleResponse;
 use reth_db::DatabaseEnv;
 
 
@@ -318,7 +319,7 @@ pub trait IntoSimResults {
     fn into_sim_results(self) -> Vec<SimResult>;
 }
 
-impl IntoSimResults for reth_rpc_types::EthCallBundleResponse {
+impl IntoSimResults for EthCallBundleResponse {
     fn into_sim_results(self) -> Vec<SimResult> {
         self.results
             .into_iter()
