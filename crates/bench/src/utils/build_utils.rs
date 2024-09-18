@@ -28,31 +28,6 @@ pub fn compile_jit_from_codes(
     revmc_toolbox_build::compile_contracts_jit_par(contracts, fallback_opt)
 }
 
-// pub fn compile_aot_from_contracts_with_fn<F>(
-//     account_to_code_fn: F,
-//     contracts: &[Address],
-//     fallback_opt: Option<CompilerOptions>,
-// ) -> Result<Vec<Result<()>>> 
-// where F: Fn(Address) -> Result<Vec<u8>> {
-//     let contracts = contracts.iter().map(|&account| {
-//         let code = account_to_code_fn(account)?;
-//         Ok(CodeWithOptions { code, options: None })
-//     }).collect::<Result<Vec<_>>>()?;
-//     revmc_toolbox_build::compile_contracts_aot(contracts, fallback_opt)
-// }
-
-// pub fn compile_aot_from_contracts(
-//     state_provider: &Box<impl StateProvider + ?Sized>,
-//     contracts: &[Address],
-//     fallback_opt: Option<CompilerOptions>,
-// ) -> Result<Vec<Result<()>>> {
-//     compile_aot_from_contracts_with_fn(
-//         |account| fetch_code_for_account(state_provider, account),
-//         contracts,
-//         fallback_opt,
-//     )
-// }
-
 pub fn compile_aot_from_file_path(
     state_provider: &Box<impl StateProvider + ?Sized>,
     file_path: &PathBuf,

@@ -9,7 +9,7 @@ use revmc::EvmCompilerFn;
 use rustc_hash::FxHashMap;
 use std::{sync::Arc, path::PathBuf, collections::HashSet};
 use eyre::Result;
-use tracing::trace;
+use tracing::{trace, debug};
 
 
 // todo: rename as it is not only aot
@@ -111,6 +111,15 @@ enum ReferenceDropObject {
     None,
 }
 
+macro_rules! time_it {
+    ($block:expr) => {{
+        let start = std::time::Instant::now();
+        let result = $block;
+        let elapsed = start.elapsed();
+        (result, elapsed)
+    }};
+}
+
 pub fn register_handler<DB, ExtCtx>(handler: &mut EvmHandler<'_, ExtCtx, DB>) 
     where DB: Database, ExtCtx: AsRef<ExternalContext>
 {    
@@ -133,9 +142,17 @@ pub fn register_handler<DB, ExtCtx>(handler: &mut EvmHandler<'_, ExtCtx, DB>)
         //     ext_fn.is_some()
         // );
         Ok(if let Some(f) = ext_fn {
-            unsafe { f.call_with_interpreter_and_memory(interpreter, memory, context) }
+            // debug!("AOT: {:?}", bytecode_hash);
+            let (res, elapsed) = time_it!({unsafe { f.call_with_interpreter_and_memory(interpreter, memory, context) }});
+            debug!("AOT: {:?}, elapsed: {:?}", bytecode_hash, elapsed);
+            res
         } else {
-            execute_frame_original(frame, memory, tables, context)?
+            // debug!("Native: {:?}, recipient: {:?}", bytecode_hash, interpreter.contract.bytecode_address);
+            let (res, elapsed) = time_it!({execute_frame_original(frame, memory, tables, context)?});
+            debug!("Native: {:?}, elapsed: {:?}", bytecode_hash, elapsed);
+            res
         })
     });
 }
+
+// todo: offer a wrapper around this external context to track touches

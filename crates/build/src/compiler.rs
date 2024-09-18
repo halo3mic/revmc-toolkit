@@ -42,8 +42,16 @@ pub struct CompilerOptions {
     pub label: Option<String>,
 }
 
+// todo: add setters
 impl CompilerOptions {
-    fn new() -> Self {
+    pub fn with_label(mut self, label: impl ToString) -> Self {
+        self.label = Some(label.to_string());
+        self
+    }
+}
+
+impl Default for CompilerOptions {
+    fn default() -> Self {
         Self {
             out_dir: None,
             target: "native".to_string(),
@@ -58,19 +66,6 @@ impl CompilerOptions {
             spec_id: SpecId::CANCUN,
             label: None,
         }
-    }
-}
-
-impl CompilerOptions {
-    pub fn with_label(mut self, label: impl ToString) -> Self {
-        self.label = Some(label.to_string());
-        self
-    }
-}
-
-impl Default for CompilerOptions {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

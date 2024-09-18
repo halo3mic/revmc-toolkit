@@ -9,7 +9,7 @@ use eyre::Result;
 use hex;
 
 pub use compiler::{CompilerOptions, Compiler, JitCompileOut};
-pub use utils::default_dir;
+pub use utils::{default_dir, OptimizationLevelDeseralizable};
 
 
 // todo: is this still relevant given we have similar functionality in cli? + address field is a problem
