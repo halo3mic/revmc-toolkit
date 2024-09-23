@@ -3,8 +3,8 @@ use tracing::warn;
 use eyre::Result;
 use reth_provider::{StateProvider, ProviderFactory};
 use revm::interpreter::{CallInputs, CallOutcome};
-use revm::primitives::{Address, Bytes, B256};
-use revm::{self, EvmContext, Inspector};
+use revm::primitives::{Address, Bytes, B256, keccak256};
+use revm::{self, EvmContext, Inspector, Database};
 use reth_db::DatabaseEnv;
 
 use crate::sim_builder::{self, TxsSimBuilderExt};
@@ -21,7 +21,7 @@ impl BytecodeTouchInspector {
     }
 }
 
-impl<DB: revm::Database> Inspector<DB> for BytecodeTouchInspector {
+impl<DB: Database> Inspector<DB> for BytecodeTouchInspector {
     fn call(
         &mut self,
         _context: &mut EvmContext<DB>,
@@ -41,11 +41,12 @@ pub fn find_touched_bytecode(
         let mut sim = sim_builder::SimulationBuilder::default()
             .with_provider_factory(provider_factory.clone())
             .with_ext_ctx(BytecodeTouchInspector::default())
+            .with_handle_register(revm::inspector_handle_register)
             .into_tx_sim(tx_hash)?;
         sim.run()?;
         let BytecodeTouchInspector { touches } = sim.into_evm().context.external;
         let touched = contracts_to_bytecode(provider_factory.latest()?, touches)?
-            .map(|code| code.0.into())
+            .map(|code| code.into())
             .collect::<Vec<_>>();
         touched_bytecode.extend(touched);
     }
@@ -63,9 +64,9 @@ fn contracts_to_bytecode<T: IntoIterator<Item = Address>>(
     for address in contracts {
         let code = state_provider.account_code(address)?;
         if let Some(code) = code {
-            bytecodes.insert(code.bytes());
+            bytecodes.insert(code.original_bytes());
         } else {
-            warn!("Code for contract {address:?} not found")
+            // warn!("Code for contract {address:?} not found") // todo: Find a better way to warn (this is too noisy)
         }
     }
     Ok(bytecodes.into_iter())

@@ -24,6 +24,8 @@ pub fn run_tx_benchmarks(tx_hash: B256, config: &BenchConfig) -> Result<()> {
         .measurement_time(Duration::from_secs(5));
 
     let provider_factory = Arc::new(make_provider_factory(&config.reth_db_path)?);
+
+    // todo: this is repated -> to utils
     let bytecodes = 
         match &config.compile_selection {
             BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } => {
@@ -37,6 +39,7 @@ pub fn run_tx_benchmarks(tx_hash: B256, config: &BenchConfig) -> Result<()> {
             }
         };
 
+    // todo: this is also repeated
     for (symbol, run_type) in [
         ("aot", SimRunType::AOTCompiled),
         ("native", SimRunType::Native),
@@ -99,6 +102,8 @@ pub fn run_block_benchmarks(block_num: u64, config: &BenchConfig, block_chunk: O
 }
 
 pub fn run_call_benchmarks(call: SimCall, call_input: Bytes, config: &BenchConfig) -> Result<()> {
+    // todo: call bench not working properly
+
     let span = span!(Level::INFO, "bench_call");
     let _guard = span.enter();
     info!("Call: {:?}", call);
