@@ -160,20 +160,7 @@ pub fn run_call_benchmarks(call: SimCall, call_input: Bytes, config: &BenchConfi
 //     Ok(())
 // }
 
-
-#[derive(Debug, serde::Serialize)]
-enum MeasureId {
-    Block(u64),
-    Tx(B256),
-}
-
-#[derive(Debug, serde::Serialize)]
-struct MeasureRecord {
-    id: MeasureId,
-    run_type: String,
-    exe_time: f64,
-}
-
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use revmc_toolbox_utils::evm::make_provider_factory;
 use revmc_toolbox_sim::sim_builder::BlockPart;
 use crate::utils::sim::BytecodeSelection;
@@ -181,6 +168,8 @@ use revmc_toolbox_sim::bytecode_touches;
 use std::sync::Arc;
 use reth_provider::ProviderFactory;
 use reth_db::DatabaseEnv;
+
+use crate::utils::bench as bench_utils;
 
 pub struct BenchConfig {
     dir_path: PathBuf,
@@ -220,8 +209,10 @@ pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result
             ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes, Some(&config.dir_path))
                 .map(|ctx| Some(Arc::new(ctx)))?;
         }
+        let measurements = block_iter.clone().into_par_iter().map(|block_num| {
+            let mut ext_ctx = ext_ctx.clone();
 
-        for block_num in block_iter.clone() { // todo: dont clone
+
             info!("Running {} for block {block_num}", symbol.to_uppercase());
 
             if let BytecodeSelection::Selected = config.compile_selection {
@@ -245,7 +236,7 @@ pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result
                         .ok_or_eyre("Block not found")?;
                     if block.body.is_empty() {
                         warn!("Found empty block {}, skipping", block_num);
-                        continue;
+                        return Ok::<Option<MeasureRecord>, eyre::ErrReport>(None);
                     }
                     let txs_len = args.block_chunk
                         .map(|chunk| {
@@ -264,16 +255,22 @@ pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result
                     (sim_config.make_block_sim(block_num, args.block_chunk)?, MeasureId::Block(block_num))
                 };
             // check_fn_validity(&mut fnc)?;
-            let exe_time = measure_execution_time(
+            let exe_time = bench_utils::measure_execution_time(
                 || { sim.run() }, 
                 args.warmup_ms, 
                 args.measurement_ms
             );
-            writer.serialize(MeasureRecord {
+            Ok(Some(MeasureRecord {
                 run_type: symbol.to_string(),
                 id: m_id,
                 exe_time,
-            })?;
+            }))
+        }).collect::<Result<Vec<_>>>()?;
+        // todo: uneccessary collecting + one err can ruin the whole thing
+        for m in measurements {
+            if let Some(record) = m {
+                writer.serialize(record)?;
+            }
         }
         writer.flush()?;
     }
@@ -289,33 +286,18 @@ fn txs_for_block(block_num: u64, provider_factory: Arc<ProviderFactory<DatabaseE
     Ok(block.body.iter().map(|tx| tx.hash).collect())
 }
 
-use std::time::Instant;
 
-fn measure_execution_time<F, R>(mut f: F, warmup_ms: u32, measurement_ms: u32) -> f64
-where
-    F: FnMut() -> R,
-{
-    info!("Warming up for {warmup_ms} ms");
-    let warm_up_duration = Duration::from_millis(warmup_ms as u64);
-    let start = Instant::now();
-    let mut warmup_iter = 0;
-    loop {
-        f();
-        if Instant::now() - start > warm_up_duration {
-            break;
-        }
-        warmup_iter += 1;
-    }
+#[derive(Debug, serde::Serialize)]
+enum MeasureId {
+    Block(u64),
+    Tx(B256),
+}
 
-    let measurement_iter = warmup_iter * measurement_ms / warmup_ms;
-    info!("Measuring with {measurement_iter} iterations");
-    let start = Instant::now();
-    for _ in 0..measurement_iter {
-        f();
-    }
-    let m_duration = (Instant::now() - start).as_nanos();
-
-    m_duration as f64 / measurement_iter as f64
+#[derive(Debug, serde::Serialize)]
+struct MeasureRecord {
+    id: MeasureId,
+    run_type: String,
+    exe_time: f64,
 }
 
 pub struct BlockRangeArgs {
