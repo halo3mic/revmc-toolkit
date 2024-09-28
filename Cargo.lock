@@ -3674,7 +3674,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-toolbox-bench"
+name = "revmc-toolkit-bench"
 version = "0.1.0"
 dependencies = [
  "cc",
@@ -3702,10 +3702,10 @@ dependencies = [
  "revmc-build",
  "revmc-builtins",
  "revmc-context",
- "revmc-toolbox-build",
- "revmc-toolbox-load",
- "revmc-toolbox-sim",
- "revmc-toolbox-utils",
+ "revmc-toolkit-build",
+ "revmc-toolkit-load",
+ "revmc-toolkit-sim",
+ "revmc-toolkit-utils",
  "serde",
  "serde_json",
  "tracing",
@@ -3713,7 +3713,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-toolbox-build"
+name = "revmc-toolkit-build"
 version = "0.1.0"
 dependencies = [
  "eyre",
@@ -3727,7 +3727,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-toolbox-load"
+name = "revmc-toolkit-load"
 version = "0.1.0"
 dependencies = [
  "eyre",
@@ -3739,7 +3739,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-toolbox-sim"
+name = "revmc-toolkit-sim"
 version = "0.1.0"
 dependencies = [
  "cc",
@@ -3767,9 +3767,9 @@ dependencies = [
  "revmc-build",
  "revmc-builtins",
  "revmc-context",
- "revmc-toolbox-build",
- "revmc-toolbox-load",
- "revmc-toolbox-utils",
+ "revmc-toolkit-build",
+ "revmc-toolkit-load",
+ "revmc-toolkit-utils",
  "serde",
  "serde_json",
  "tracing",
@@ -3777,7 +3777,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "revmc-toolbox-utils"
+name = "revmc-toolkit-utils"
 version = "0.1.0"
 dependencies = [
  "cc",
@@ -3805,8 +3805,8 @@ dependencies = [
  "revmc-build",
  "revmc-builtins",
  "revmc-context",
- "revmc-toolbox-build",
- "revmc-toolbox-load",
+ "revmc-toolkit-build",
+ "revmc-toolkit-load",
  "serde",
  "serde_json",
  "tracing",

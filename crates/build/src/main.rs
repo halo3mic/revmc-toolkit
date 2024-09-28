@@ -1,4 +1,4 @@
-use revmc_toolbox_build::{self, ConfigFile};
+use revmc_toolkit_build::{self, ConfigFile};
 use eyre::Result;
 
 
@@ -6,7 +6,7 @@ const DEFAULT_CONFIG_NAME: &str = "revmc.build.config.json";
 
 fn main() -> Result<()> {
     let config = read_config()?;
-    revmc_toolbox_build::compile_contracts_aot(config.contracts, config.fallback_config)?;
+    revmc_toolkit_build::compile_contracts_aot(config.contracts, config.fallback_config)?;
     Ok(())
 }
 

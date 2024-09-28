@@ -1,13 +1,13 @@
 [package]
-name = "revmc-toolbox-sim"
+name = "revmc-toolkit-sim"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.79"
 
 [dependencies]
-revmc-toolbox-build.workspace = true
-revmc-toolbox-load.workspace = true
-revmc-toolbox-utils.workspace = true
+revmc-toolkit-build.workspace = true
+revmc-toolkit-load.workspace = true
+revmc-toolkit-utils.workspace = true
 
 reth-db.workspace = true
 reth-provider.workspace = true

@@ -9,10 +9,10 @@ default-members = [
 resolver = "2"
 
 [workspace.dependencies]
-revmc-toolbox-load = { path = "crates/load" }
-revmc-toolbox-build = { path = "crates/build" }
-revmc-toolbox-sim = { path = "crates/sim" }
-revmc-toolbox-utils = { path = "crates/utils" }
+revmc-toolkit-load = { path = "crates/load" }
+revmc-toolkit-build = { path = "crates/build" }
+revmc-toolkit-sim = { path = "crates/sim" }
+revmc-toolkit-utils = { path = "crates/utils" }
 
 reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  } 
 reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  } 

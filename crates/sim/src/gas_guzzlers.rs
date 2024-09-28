@@ -12,7 +12,7 @@ use revm::interpreter::{CallInputs, CallOutcome};
 use revm::{self, EvmContext, Inspector};
 use revm::primitives::Address;
 
-use revmc_toolbox_utils as utils;
+use revmc_toolkit_utils as utils;
 use crate::sim_builder::{self, TxsSimBuilderExt, StateProviderCacheDB};
 
 
@@ -277,7 +277,7 @@ impl GasGuzzlerConfig {
 mod tests {
     use super::*;
     use std::path::Path;
-    use revmc_toolbox_utils as utils;
+    use revmc_toolkit_utils as utils;
     use revm::primitives::keccak256;
 
     #[test]

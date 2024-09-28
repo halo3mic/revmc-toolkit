@@ -9,8 +9,8 @@ use cli::{Cli, Commands};
 use eyre::{Ok, Result};
 use clap::Parser;
 
-use revmc_toolbox_utils::{evm as evm_utils, build as build_utils};
-use revmc_toolbox_sim::sim_builder::BlockPart;
+use revmc_toolkit_utils::{evm as evm_utils, build as build_utils};
+use revmc_toolkit_sim::sim_builder::BlockPart;
 use utils::sim::{BytecodeSelection, SimRunType, SimCall};
 use benches::BenchConfig;
 
@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     dotenv::dotenv()?;
 
     let reth_db_path: PathBuf = std::env::var("RETH_DB_PATH")?.parse()?;
-    let dir_path = revmc_toolbox_build::default_dir();
+    let dir_path = revmc_toolkit_build::default_dir();
 
     let cli = Cli::parse();
     match cli.command {
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 
             // todo: reimplement touches and success monitoring
             // result.contract_touches.into_iter().for_each(|(address, touch_counter)| {
-            //     let revmc_toolbox_load::TouchCounter { non_native, overall } = touch_counter;
+            //     let revmc_toolkit_load::TouchCounter { non_native, overall } = touch_counter;
             //     if result.non_native_exe && non_native != overall {
             //         println!("{}/{} native touches for address {address:?}", overall-non_native, overall);
             //     } else if !result.non_native_exe && non_native != 0 {
