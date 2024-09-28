@@ -10,7 +10,7 @@ use reth_provider::{
 };
 use revm::interpreter::{CallInputs, CallOutcome};
 use revm::{self, EvmContext, Inspector};
-use revm::primitives::{Address, Bytes};
+use revm::primitives::Address;
 
 use revmc_toolbox_utils as utils;
 use crate::sim_builder::{self, TxsSimBuilderExt, StateProviderCacheDB};
@@ -177,7 +177,7 @@ impl GasGuzzlerResult<Address> {
         let mut bytecode_map = MapWrapper::default();
         for (contract, usage) in self.usage.into_inner().into_iter() {
             if let Some(bytecode) = self.state_provider.account_code(contract)? {
-                bytecode_map.join(bytecode.bytes().into(), usage);
+                bytecode_map.join(bytecode.original_bytes().into(), usage);
             } else {
                 warn!("Code for contract {contract:?} not found")
             }
@@ -278,6 +278,7 @@ mod tests {
     use super::*;
     use std::path::Path;
     use revmc_toolbox_utils as utils;
+    use revm::primitives::keccak256;
 
     #[test]
     fn test_gas_guzzlers() -> Result<()>{
@@ -290,7 +291,8 @@ mod tests {
         let config = GasGuzzlerConfig::new(block)
             .with_end_block(end_block)
             .with_sample_size(1000);
-        let gas_guzzlers = config.find_gas_guzzlers(provider_factory.clone())?;
+        let gas_guzzlers = config.find_gas_guzzlers(provider_factory.clone())?
+            .contract_to_bytecode()?;
 
         let mid_block = (block+end_block)/2;
         let mut gas_guzzlers = gas_guzzlers.into_usage().into_iter()
@@ -298,12 +300,13 @@ mod tests {
                 let mean_block = usage.mean_block();
                 let mid_block_offset = (mid_block as i64 - mean_block as i64).abs();
                 let net_gas_used = usage.gas_used as i64 - usage.gas_deficit as i64;
-                (key, usage, mid_block_offset, net_gas_used, (mid_block, mean_block))
+                let key_hash = keccak256(key);
+                (key_hash, usage, mid_block_offset, net_gas_used, (mid_block, mean_block))
             })
             .collect::<Vec<_>>();
         gas_guzzlers.sort_by(|a, b| b.3.cmp(&a.3));
 
-        println!("{:#?}", gas_guzzlers[..1000].to_vec());
+        println!("{:#?}", gas_guzzlers[..20].to_vec());
 
         Ok(())
     }

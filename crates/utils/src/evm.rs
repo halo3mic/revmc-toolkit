@@ -1,9 +1,7 @@
+use reth_provider::providers::StaticFileProvider;
+pub use reth_provider::ProviderFactory; 
 use reth_chainspec::ChainSpecBuilder;
-use reth_db::{self, DatabaseEnv};
-use reth_provider::{
-    providers::StaticFileProvider,
-    ProviderFactory,
-};
+pub use reth_db::DatabaseEnv;
 use std::path::Path;
 use eyre::Result;
 

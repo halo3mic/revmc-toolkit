@@ -1,15 +1,10 @@
 use std::sync::Arc;
 use eyre::{Result, OptionExt};
 use revm::{
-    primitives::{
-        Address, AccountInfo, Bytecode, Bytes, TransactTo,
-         EnvWithHandlerCfg, TxEnv, B256,
-    },
-    handler::register::HandleRegister,
-    db::{CacheDB, InMemoryDB},
-    DatabaseRef, 
-    Database,
-    Evm,
+    db::{CacheDB, InMemoryDB}, 
+    handler::register::HandleRegister, primitives::{
+        AccountInfo, Address, Bytecode, Bytes, EnvWithHandlerCfg, TransactTo, TxEnv, B256
+    }, Database, DatabaseRef, Evm
 };
 use reth_provider::{
     StateProvider, ProviderFactory, BlockReader, 
@@ -24,7 +19,6 @@ use reth_db::DatabaseEnv;
 pub type StateProviderCacheDB = CacheDB<StateProviderDatabase<StateProviderArc>>;
 type SimEvm<'a, ExtCtx> = Evm<'a, ExtCtx, StateProviderCacheDB>;
 type SimFn<'a, ExtCtx, DB> = Box<dyn FnMut(&mut Evm<'a, ExtCtx, DB>) -> Result<Vec<SimResult>>>;
-type SimFnInMemoryDB<'a, ExtCtx> = SimFn<'a, ExtCtx, InMemoryDB>;
 type StateProviderArc = Arc<Box<dyn StateProvider>>;
 type SimResults = Vec<SimResult>;
 
@@ -96,9 +90,7 @@ pub trait TxsSimBuilderExt<ExtCtx, S> {
         let pre_res = preexecute_fn.map(|f| f(&mut evm))
             .transpose()?
             .unwrap_or_default();
-        // todo: what to do with pre_res result?
-
-        Ok(Simulation::new(evm, execute_fn))
+        Ok(Simulation::new(evm, execute_fn).with_pre_execution_res(pre_res))
     }
 
     fn make_db_at_block(&self, block_number: u64) -> Result<StateProviderCacheDB> {
@@ -232,19 +224,10 @@ impl<ExtCtx> SimulationBuilder<ExtCtx, ()> {
 
 }
 
-// impl SimulationBuilder<()> {
-//     pub fn from_provider_factory(provider_factory: Arc<ProviderFactory<DatabaseEnv>>) -> Self {
-//         Self {
-//             ext_ctx: Some(()),
-//             handler_register: None,
-//             provider_factory,
-//         }
-//     }
-// }
-
 pub struct Simulation<ExtCtx: 'static, DB: Database + DatabaseRef + 'static> {
     evm: Evm<'static, ExtCtx, DB>,
     fnc: Box<dyn FnMut(&mut Evm<'static, ExtCtx, DB>) -> Result<Vec<SimResult>>>,
+    pre_execution_res: Option<Vec<SimResult>>,
 }
 
 impl<ExtCtx, DB> Simulation<ExtCtx, DB> 
@@ -252,7 +235,7 @@ impl<ExtCtx, DB> Simulation<ExtCtx, DB>
 {
 
     pub fn new(evm: Evm<'static, ExtCtx, DB>, fnc: SimFn<'static, ExtCtx, DB>) -> Self {
-        Self { evm, fnc }
+        Self { evm, fnc, pre_execution_res: None, }
     }
 
     pub fn run(&mut self) -> Result<Vec<SimResult>> {
@@ -264,6 +247,19 @@ impl<ExtCtx, DB> Simulation<ExtCtx, DB>
 
     pub fn into_evm(self) -> Evm<'static, ExtCtx, DB> {
         self.evm
+    }
+
+    pub fn evm(&self) -> &Evm<'static, ExtCtx, DB> {
+        &self.evm
+    }
+
+    fn with_pre_execution_res(mut self, pre_execution_res: Vec<SimResult>) -> Self {
+        self.pre_execution_res = Some(pre_execution_res);
+        self
+    }
+
+    pub fn pre_execution_res(&self) -> Option<&Vec<SimResult>> {
+        self.pre_execution_res.as_ref()
     }
 
 }
@@ -293,11 +289,11 @@ impl BlockPart {
 
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SimResult {
-    gas_used: u64, 
-    success: bool,
-    output: Option<Bytes>,
+    pub gas_used: u64, 
+    pub success: bool,
+    pub output: Option<Bytes>,
 }
 
 impl SimResult {

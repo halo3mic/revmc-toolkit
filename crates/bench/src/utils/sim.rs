@@ -9,26 +9,26 @@ use revmc_toolbox_sim::sim_builder::{
     self, BlockPart, CallSimBuilderExt, Simulation, 
     StateProviderCacheDB, TxsSimBuilderExt,
 };
-use revmc_toolbox_load::{EvmCompilerFnLoader, ExternalContext, register_handler};
+use revmc_toolbox_load::{EvmCompilerFnLoader, RevmcExtCtx, revmc_register_handler};
 use crate::utils::build as build_utils;
 
 
 pub struct SimConfig<P> {
-    ext_ctx: Arc<ExternalContext>, 
+    ext_ctx: RevmcExtCtx, 
     provider_factory: P,
 }
 
-impl From<Arc<ExternalContext>> for SimConfig<()> {
-    fn from(ext_ctx: Arc<ExternalContext>) -> Self {
+impl From<RevmcExtCtx> for SimConfig<()> {
+    fn from(ext_ctx: RevmcExtCtx) -> Self {
         SimConfig { ext_ctx, provider_factory: () }
     }
 }
 
 impl<P> SimConfig<P> {
-    pub fn make_call_sim(&self, call_type: SimCall, input: Bytes) -> Result<Simulation<Arc<ExternalContext>, InMemoryDB>> {
+    pub fn make_call_sim(&self, call_type: SimCall, input: Bytes) -> Result<Simulation<RevmcExtCtx, InMemoryDB>> {
         let sim = sim_builder::SimulationBuilder::default()
             .with_ext_ctx(self.ext_ctx.clone())
-            .with_handle_register(register_handler)
+            .with_handle_register(revmc_register_handler)
             .into_call_sim(call_type.bytecode(), input)?;
         Ok(sim)
     }
@@ -36,24 +36,24 @@ impl<P> SimConfig<P> {
 
 impl SimConfig<Arc<ProviderFactory<DatabaseEnv>>> {
 
-    pub fn new(provider_factory: Arc<ProviderFactory<DatabaseEnv>>, ext_ctx: Arc<ExternalContext>) -> Self {
+    pub fn new(provider_factory: Arc<ProviderFactory<DatabaseEnv>>, ext_ctx: RevmcExtCtx) -> Self {
         Self { provider_factory, ext_ctx }
     }
 
-    pub fn make_tx_sim(&self, tx_hash: B256) -> Result<Simulation<Arc<ExternalContext>, StateProviderCacheDB>> {
+    pub fn make_tx_sim(&self, tx_hash: B256) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>> {
         let sim = sim_builder::SimulationBuilder::default()
             .with_provider_factory(self.provider_factory.clone())
             .with_ext_ctx(self.ext_ctx.clone())
-            .with_handle_register(register_handler)
+            .with_handle_register(revmc_register_handler)
             .into_tx_sim(tx_hash)?;
         Ok(sim)
     }
     
-    pub fn make_block_sim(&self, block_num: u64, block_part: Option<BlockPart>) -> Result<Simulation<Arc<ExternalContext>, StateProviderCacheDB>> {
+    pub fn make_block_sim(&self, block_num: u64, block_part: Option<BlockPart>) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>> {
         let sim = sim_builder::SimulationBuilder::default()
             .with_provider_factory(self.provider_factory.clone())
             .with_ext_ctx(self.ext_ctx.clone())
-            .with_handle_register(register_handler)
+            .with_handle_register(revmc_register_handler)
             .into_block_sim(block_num, block_part)?;
         Ok(sim)
     }
@@ -86,10 +86,10 @@ pub fn make_ext_ctx<'a>(
     run_type: SimRunType, 
     bytecode: Vec<Vec<u8>>, 
     aot_dir: Option<&PathBuf>,
-) -> Result<ExternalContext> {
+) -> Result<RevmcExtCtx> {
     Ok(match run_type {
         SimRunType::Native => {
-            ExternalContext::default()
+            RevmcExtCtx::default()
         }
         SimRunType::JITCompiled => {
             build_utils::compile_jit_from_codes(bytecode, None)?
@@ -124,10 +124,11 @@ impl BytecodeSelection {
     pub fn bytecodes(
         &self, 
         provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
-        txs: Vec<B256>,
+        txs: Option<Vec<B256>>,
     ) -> Result<Vec<Vec<u8>>> {
         Ok(match self {
             BytecodeSelection::Selected => {
+                let txs = txs.ok_or(eyre::eyre!("Missing transaction hashes"))?;
                 bytecode_touches::find_touched_bytecode(provider_factory, txs)?
                     .into_iter().collect()
             }

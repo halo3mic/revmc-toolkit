@@ -26,7 +26,7 @@ pub type JitCompileOut = (B256, EvmCompilerFn);
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompilerOptions {
-    pub out_dir: Option<PathBuf>,
+    pub out_dir: PathBuf,
     pub spec_id: SpecId,
 
     pub target_features: Option<String>,
@@ -53,7 +53,7 @@ impl CompilerOptions {
 impl Default for CompilerOptions {
     fn default() -> Self {
         Self {
-            out_dir: None,
+            out_dir: utils::default_dir(),
             target: "native".to_string(),
             target_cpu: None,
             target_features: None,
@@ -132,7 +132,7 @@ impl Compiler {
         )?;
         let mut compiler = EvmCompiler::new(backend);
     
-        compiler.set_dump_to(self.opt.out_dir.clone());
+        compiler.set_dump_to(Some(self.opt.out_dir.clone()));
         compiler.gas_metering(!self.opt.no_gas);
         unsafe { compiler.stack_bound_checks(!self.opt.no_len_checks) };
         compiler.frame_pointers(self.opt.frame_pointers);
@@ -177,16 +177,12 @@ impl Compiler {
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-    
+
         Err(eyre::eyre!("Failed to link object file after 10 attempts"))
     }
 
     fn out_dir(&self, name: &str) -> Result<PathBuf> {
-        let out_dir = match &self.opt.out_dir {
-            Some(dir) => dir,
-            None => &utils::default_dir(),
-        };
-        let out_dir = out_dir.join(name);
+        let out_dir = self.opt.out_dir.join(name);
         utils::make_dir(&out_dir)?;
         Ok(out_dir.to_path_buf())
     }

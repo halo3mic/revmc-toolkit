@@ -25,19 +25,7 @@ pub fn run_tx_benchmarks(tx_hash: B256, config: &BenchConfig) -> Result<()> {
 
     let provider_factory = Arc::new(make_provider_factory(&config.reth_db_path)?);
 
-    // todo: this is repated -> to utils
-    let bytecodes = 
-        match &config.compile_selection {
-            BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } => {
-                gconfig.find_gas_guzzlers(provider_factory.clone())?
-                    .contract_to_bytecode()?
-                    .into_top_guzzlers(*size_limit)
-            },
-            BytecodeSelection::Selected => {
-                bytecode_touches::find_touched_bytecode(provider_factory.clone(), vec![tx_hash])?
-                    .into_iter().collect()
-            }
-        };
+    let bytecodes = config.compile_selection.bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
 
     // todo: this is also repeated
     for (symbol, run_type) in [
@@ -48,7 +36,7 @@ pub fn run_tx_benchmarks(tx_hash: B256, config: &BenchConfig) -> Result<()> {
         info!("Running {}", symbol.to_uppercase());
 
         let ext_ctx = sim_utils::make_ext_ctx(run_type, bytecodes.clone(), Some(&config.dir_path))?;
-        let mut sim = SimConfig::new(provider_factory.clone(), Arc::new(ext_ctx)) // todo: make arch optional?
+        let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx) // todo: make arch optional?
             .make_tx_sim(tx_hash)?;
 
         // check_fn_validity(&mut fnc)?;
@@ -68,19 +56,10 @@ pub fn run_block_benchmarks(block_num: u64, config: &BenchConfig, block_chunk: O
         .measurement_time(Duration::from_secs(5));
 
     let provider_factory = Arc::new(make_provider_factory(&config.reth_db_path)?);
-    let bytecodes = 
-        match &config.compile_selection {
-            BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } => {
-                gconfig.find_gas_guzzlers(provider_factory.clone())?
-                    .contract_to_bytecode()?
-                    .into_top_guzzlers(*size_limit)
-            },
-            BytecodeSelection::Selected => {
-                let txs = txs_for_block(block_num, provider_factory.clone())?;
-                bytecode_touches::find_touched_bytecode(provider_factory.clone(), txs)?
-                    .into_iter().collect()
-            }
-        };
+    let bytecodes = config.compile_selection.bytecodes(
+        provider_factory.clone(),
+        Some(txs_for_block(&provider_factory, block_num)?)
+    )?;
 
     for (symbol, run_type) in [
         ("native", SimRunType::Native),
@@ -90,7 +69,7 @@ pub fn run_block_benchmarks(block_num: u64, config: &BenchConfig, block_chunk: O
         info!("Running {}", symbol.to_uppercase());
 
         let ext_ctx = sim_utils::make_ext_ctx(run_type, bytecodes.clone(), Some(&config.dir_path))?;
-        let mut sim = SimConfig::new(provider_factory.clone(), Arc::new(ext_ctx)) // todo: make arch optional?
+        let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx) // todo: make arch optional?
             .make_block_sim(block_num, block_chunk)?;
 
         // check_fn_validity(&mut fnc)?;
@@ -125,7 +104,7 @@ pub fn run_call_benchmarks(call: SimCall, call_input: Bytes, config: &BenchConfi
             vec![bytecode], 
             Some(&config.dir_path)
         )?;
-        let mut sim = SimConfig::from(Arc::new(ext_ctx))
+        let mut sim = SimConfig::from(ext_ctx)
             .make_call_sim(call, call_input.clone())?;
 
         // check_fn_validity(&mut fnc)?;
@@ -171,10 +150,10 @@ use reth_db::DatabaseEnv;
 
 use crate::utils::bench as bench_utils;
 
-pub struct BenchConfig {
-    dir_path: PathBuf,
-    reth_db_path: PathBuf,
-    compile_selection: BytecodeSelection,
+pub(crate) struct BenchConfig {
+    pub dir_path: PathBuf,
+    pub reth_db_path: PathBuf,
+    pub compile_selection: BytecodeSelection,
 }
 
 impl BenchConfig {
@@ -206,8 +185,7 @@ pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result
             let bytecodes = gconfig.find_gas_guzzlers(provider_factory.clone())?
                 .contract_to_bytecode()?
                 .into_top_guzzlers(*size_limit);
-            ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes, Some(&config.dir_path))
-                .map(|ctx| Some(Arc::new(ctx)))?;
+            ext_ctx = Some(sim_utils::make_ext_ctx(run_type.clone(), bytecodes, Some(&config.dir_path))?);
         }
         let measurements = block_iter.clone().into_par_iter().map(|block_num| {
             let mut ext_ctx = ext_ctx.clone();
@@ -216,12 +194,11 @@ pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result
             info!("Running {} for block {block_num}", symbol.to_uppercase());
 
             if let BytecodeSelection::Selected = config.compile_selection {
-                let txs = txs_for_block(block_num, provider_factory.clone())?;
+                let txs = txs_for_block(&provider_factory, block_num)?;
                 let bytecodes = bytecode_touches::find_touched_bytecode(provider_factory.clone(), txs)?
                     .into_iter().collect();
                 // todo: cached external ctx from previous blocks
-                ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes, Some(&config.dir_path))
-                    .map(|ctx| Some(Arc::new(ctx)))?;
+                ext_ctx = Some(sim_utils::make_ext_ctx(run_type.clone(), bytecodes, Some(&config.dir_path))?);
             }
 
             let sim_config = SimConfig::new(
@@ -280,7 +257,7 @@ pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result
     Ok(())
 }
 
-fn txs_for_block(block_num: u64, provider_factory: Arc<ProviderFactory<DatabaseEnv>>) -> Result<Vec<B256>> {
+fn txs_for_block(provider_factory: &Arc<ProviderFactory<DatabaseEnv>>, block_num: u64) -> Result<Vec<B256>> {
     let block = provider_factory.block(block_num.into())?
         .ok_or_eyre("Block not found")?;
     Ok(block.body.iter().map(|tx| tx.hash).collect())

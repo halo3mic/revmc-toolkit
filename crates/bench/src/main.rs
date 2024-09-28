@@ -11,7 +11,7 @@ use revm::primitives::{B256, U256};
 use benches::BenchConfig;
 use utils::sim::{BytecodeSelection, SimRunType, SimCall};
 use revmc_toolbox_utils::evm as evm_utils;
-use revmc_toolbox_sim::{sim_builder::BlockPart, gas_guzzlers::GasGuzzlerConfig, bytecode_touches};
+use revmc_toolbox_sim::sim_builder::BlockPart;
 
 
 fn main() -> Result<()> {
@@ -37,6 +37,11 @@ fn main() -> Result<()> {
         Commands::Run(run_args) => {
             let run_type = run_args.run_type.parse::<SimRunType>()?;
             info!("Running sim for type: {:?}", run_type);
+
+            // if let Some(tx_hash) = run_args.tx_hash {
+            //     let tx_hash = B256::from_str(&tx_hash)?;
+            //     runners::run_tx(tx_hash, run_type, &BenchConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected))?;
+            // }
 
             // todo into call utils
 
