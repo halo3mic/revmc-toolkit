@@ -14,14 +14,14 @@ revmc-toolbox-build = { path = "crates/build" }
 revmc-toolbox-sim = { path = "crates/sim" }
 revmc-toolbox-utils = { path = "crates/utils" }
 
-reth-db = { git = "https://github.com/paradigmxyz/reth", rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" } 
-reth-provider = { git = "https://github.com/paradigmxyz/reth", rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" } 
-reth-chainspec = { git = "https://github.com/paradigmxyz/reth", rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" } 
-reth-revm = { git = "https://github.com/paradigmxyz/reth", rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" } 
-reth-primitives = { git = "https://github.com/paradigmxyz/reth", features = ["c-kzg"], rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" } 
-reth-rpc-types = { git = "https://github.com/paradigmxyz/reth", rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" }
-reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" }
-reth-evm = { git = "https://github.com/paradigmxyz/reth", rev = "ec5ce2196519dd96e9246817b7f9ff94bad129a3" }
+reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  } 
+reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  } 
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6" } 
+reth-revm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  } 
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", features = ["c-kzg"], tag = "v1.0.6"  } 
+reth-rpc-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  }
+reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  }
 revmc = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-builtins = { git = "https://github.com/paradigmxyz/revmc" }
 revmc-context = { git = "https://github.com/paradigmxyz/revmc" }
