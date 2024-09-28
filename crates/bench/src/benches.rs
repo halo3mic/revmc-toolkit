@@ -23,7 +23,7 @@ pub fn run_tx_benchmarks(tx_hash: B256, config: &BenchConfig) -> Result<()> {
         .sample_size(100)
         .measurement_time(Duration::from_secs(5));
 
-    let provider_factory = Arc::new(make_provider_factory(&config.reth_db_path)?);
+    let provider_factory = make_provider_factory(&config.reth_db_path)?;
 
     let bytecodes = config.compile_selection.bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
 
@@ -55,7 +55,7 @@ pub fn run_block_benchmarks(block_num: u64, config: &BenchConfig, block_chunk: O
         .sample_size(100)
         .measurement_time(Duration::from_secs(5));
 
-    let provider_factory = Arc::new(make_provider_factory(&config.reth_db_path)?);
+    let provider_factory = make_provider_factory(&config.reth_db_path)?;
     let bytecodes = config.compile_selection.bytecodes(
         provider_factory.clone(),
         Some(txs_for_block(&provider_factory, block_num)?)
@@ -167,7 +167,7 @@ impl BenchConfig {
 }
 
 pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result<()> {
-    let provider_factory = Arc::new(make_provider_factory(&config.reth_db_path)?);
+    let provider_factory = make_provider_factory(&config.reth_db_path)?;
     let mut writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
 
     let span = span!(Level::INFO, "compare_block_range");
@@ -257,7 +257,7 @@ pub fn compare_block_range(args: BlockRangeArgs, config: &BenchConfig) -> Result
     Ok(())
 }
 
-fn txs_for_block(provider_factory: &Arc<ProviderFactory<DatabaseEnv>>, block_num: u64) -> Result<Vec<B256>> {
+fn txs_for_block(provider_factory: &ProviderFactory<DatabaseEnv>, block_num: u64) -> Result<Vec<B256>> {
     let block = provider_factory.block(block_num.into())?
         .ok_or_eyre("Block not found")?;
     Ok(block.body.iter().map(|tx| tx.hash).collect())

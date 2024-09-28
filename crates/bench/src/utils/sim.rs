@@ -10,8 +10,7 @@ use revmc_toolbox_sim::sim_builder::{
     StateProviderCacheDB, TxsSimBuilderExt,
 };
 use revmc_toolbox_load::{EvmCompilerFnLoader, RevmcExtCtx, revmc_register_handler};
-use crate::utils::build as build_utils;
-
+use revmc_toolbox_utils::build as build_utils;
 
 pub struct SimConfig<P> {
     ext_ctx: RevmcExtCtx, 
@@ -34,9 +33,9 @@ impl<P> SimConfig<P> {
     }
 }
 
-impl SimConfig<Arc<ProviderFactory<DatabaseEnv>>> {
+impl SimConfig<ProviderFactory<DatabaseEnv>> {
 
-    pub fn new(provider_factory: Arc<ProviderFactory<DatabaseEnv>>, ext_ctx: RevmcExtCtx) -> Self {
+    pub fn new(provider_factory: ProviderFactory<DatabaseEnv>, ext_ctx: RevmcExtCtx) -> Self {
         Self { provider_factory, ext_ctx }
     }
 
@@ -123,7 +122,7 @@ pub enum BytecodeSelection {
 impl BytecodeSelection {
     pub fn bytecodes(
         &self, 
-        provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
+        provider_factory: ProviderFactory<DatabaseEnv>,
         txs: Option<Vec<B256>>,
     ) -> Result<Vec<Vec<u8>>> {
         Ok(match self {

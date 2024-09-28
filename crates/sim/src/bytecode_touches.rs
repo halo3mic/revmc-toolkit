@@ -33,7 +33,7 @@ impl<DB: Database> Inspector<DB> for BytecodeTouchInspector {
 }
 
 pub fn find_touched_bytecode(
-    provider_factory: Arc<ProviderFactory<DatabaseEnv>>, 
+    provider_factory: ProviderFactory<DatabaseEnv>, 
     txs: Vec<B256>,
 ) -> Result<HashSet<Vec<u8>>> {
     let mut touched_bytecode = HashSet::new();

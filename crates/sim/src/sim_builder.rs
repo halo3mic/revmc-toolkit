@@ -61,7 +61,7 @@ impl<ExtCtx: 'static, P> CallSimBuilderExt<ExtCtx> for SimulationBuilder<ExtCtx,
 pub trait TxsSimBuilderExt<ExtCtx, S> {
     type SimType = S;
 
-    fn provider_factory(&self) -> &Arc<ProviderFactory<DatabaseEnv>>;
+    fn provider_factory(&self) -> &ProviderFactory<DatabaseEnv>;
 
     fn into_tx_sim(
         self, 
@@ -115,10 +115,10 @@ pub trait TxsSimBuilderExt<ExtCtx, S> {
 }
 
 impl<ExtCtx: 'static> TxsSimBuilderExt<ExtCtx, Simulation<ExtCtx, StateProviderCacheDB>> 
-for SimulationBuilder<ExtCtx, Arc<ProviderFactory<DatabaseEnv>>> 
+for SimulationBuilder<ExtCtx, ProviderFactory<DatabaseEnv>> 
 {
     
-    fn provider_factory(&self) -> &Arc<ProviderFactory<DatabaseEnv>> {
+    fn provider_factory(&self) -> &ProviderFactory<DatabaseEnv> {
         &self.provider_factory
     }
     
@@ -213,8 +213,8 @@ impl<ExtCtx> SimulationBuilder<ExtCtx, ()> {
 
     pub fn with_provider_factory(
         self, 
-        provider_factory: Arc<ProviderFactory<DatabaseEnv>>
-    ) -> SimulationBuilder<ExtCtx, Arc<ProviderFactory<DatabaseEnv>>> {
+        provider_factory: ProviderFactory<DatabaseEnv>
+    ) -> SimulationBuilder<ExtCtx, ProviderFactory<DatabaseEnv>> {
         SimulationBuilder {
             ext_ctx: None,
             handler_register: None,

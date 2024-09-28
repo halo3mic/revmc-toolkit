@@ -1,10 +1,5 @@
-mod build_utils;
 pub mod bench;
 pub mod sim;
-
-pub mod build {
-    pub use super::build_utils::*;
-}
 
 
 const DEFAULT_BUILD_CONFIG: &str = "revmc.build.config.json";

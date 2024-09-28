@@ -3,15 +3,16 @@ mod cli;
 mod benches;
 
 use std::{path::PathBuf, str::FromStr};
+use revm::primitives::{B256, U256};
 use tracing::{info, span, Level};
 use cli::{Cli, Commands};
-use clap::Parser;
 use eyre::{Ok, Result};
-use revm::primitives::{B256, U256};
-use benches::BenchConfig;
-use utils::sim::{BytecodeSelection, SimRunType, SimCall};
-use revmc_toolbox_utils::evm as evm_utils;
+use clap::Parser;
+
+use revmc_toolbox_utils::{evm as evm_utils, build as build_utils};
 use revmc_toolbox_sim::sim_builder::BlockPart;
+use utils::sim::{BytecodeSelection, SimRunType, SimCall};
+use benches::BenchConfig;
 
 
 fn main() -> Result<()> {
@@ -31,7 +32,7 @@ fn main() -> Result<()> {
             info!("Compiling AOT from config file: {:?}", path);
             let span = span!(Level::INFO, "build");
             let _guard = span.enter();
-            utils::build::compile_aot_from_file_path(&state_provider, &path)?
+            build_utils::compile_aot_from_file_path(&state_provider, &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
         }
         Commands::Run(run_args) => {

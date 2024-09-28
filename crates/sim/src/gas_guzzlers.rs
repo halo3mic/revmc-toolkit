@@ -228,7 +228,7 @@ impl GasGuzzlerConfig {
 
     pub fn find_gas_guzzlers(
         &self,
-        provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
+        provider_factory: ProviderFactory<DatabaseEnv>,
     ) -> Result<GasGuzzlerResult<Address>> {
         let end_block = self.end_block.unwrap_or(provider_factory.last_block_number()?);
         let sample_size = self.sample_size.unwrap_or(end_block-self.start_block);
@@ -260,7 +260,7 @@ impl GasGuzzlerConfig {
     }
 
     fn make_sim_for_block(
-        provider_factory: Arc<ProviderFactory<DatabaseEnv>>,
+        provider_factory: ProviderFactory<DatabaseEnv>,
         block_num: u64,
     ) -> Result<sim_builder::Simulation<BytecodeContractUsageInspector, StateProviderCacheDB>> {
         sim_builder::SimulationBuilder::default()
@@ -285,7 +285,7 @@ mod tests {
         dotenv::dotenv()?;
         let db_path = std::env::var("RETH_DB_PATH")?;
         let db_path = Path::new(&db_path);
-        let provider_factory = Arc::new(utils::evm::make_provider_factory(&db_path).unwrap());
+        let provider_factory = utils::evm::make_provider_factory(&db_path).unwrap();
         let block = 20392617;
         let end_block = block+200_000;
         let config = GasGuzzlerConfig::new(block)

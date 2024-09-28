@@ -42,7 +42,7 @@ pub struct CompilerOptions {
     pub label: Option<String>,
 }
 
-// todo: add setters
+// todo: add the rest setters
 impl CompilerOptions {
     pub fn with_label(mut self, label: impl ToString) -> Self {
         self.label = Some(label.to_string());
