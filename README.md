@@ -4,16 +4,20 @@ Tools for comparing execution of calls, transactions and blocks with [revmc](htt
 
 Very much work in progress! 🚧
 
-## Example usage 
+## Usage
 
-### Bench or run a call, tx or block
 
-Run command for usage instructions:
+### Bench a single block or tx
 ```bash
-cargo run -p revmc-toolkit-bench
+cargo run --release -p revmc-toolkit-bench bench --block-num {block-number} 
 ```
+
+```bash
+cargo run --release -p revmc-toolkit-bench bench --tx-hash {tx-hash}
+```
+
 
 ### Measure and record performance within a block range 
 ```bash 
-RUST_LOG=info cargo run --release -p revm-toolkit-bench block-range 20307900..20347900 f20307900t20347900s50 --sample-size 10
+RUST_LOG=info cargo run --release -p revmc-toolkit-bench block-range 20307900..20347900 f20307900t20347900s50 --sample-size 10
 ```

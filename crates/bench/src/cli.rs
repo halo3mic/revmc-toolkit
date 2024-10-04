@@ -12,8 +12,16 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     Build(BuildArgsCli),
-    Run(RunArgsCli),
-    Bench(BenchArgsCli),
+    // Run(RunArgsCli), // todo
+    #[command(subcommand)]
+    Bench(BenchType),
+}
+
+#[derive(Subcommand)]
+pub enum BenchType {
+    Tx { tx_hash: String },
+    Block(BenchBlockArgsCli),
+    Call,
     BlockRange(BlockRangeArgsCli),
 }
 
@@ -23,17 +31,12 @@ pub struct BuildArgsCli {
 }
 
 #[derive(Args, Debug)]
-pub struct RunArgsCli {
-    #[arg(short, long, help = "TxHash of the transaction to run/bench.")]
-    pub tx_hash: Option<String>,
+pub struct BenchBlockArgsCli {
+    pub block_num: u64,
     #[arg(long, help = "Proportion of the block to use - top of the block.")]
     pub tob_block_chunk: Option<f32>,
     #[arg(long, help = "Proportion of the block to use - bottom of the block.")]
     pub bob_block_chunk: Option<f32>,
-    #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
-    pub block_num: Option<String>,
-    #[arg(short, long, help = "aot_compiled or native")]
-    pub run_type: String,
 }
 
 #[derive(Args, Debug)]
