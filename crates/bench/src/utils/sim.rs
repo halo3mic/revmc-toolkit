@@ -128,10 +128,12 @@ impl BytecodeSelection {
         Ok(match self {
             BytecodeSelection::Selected => {
                 let txs = txs.ok_or(eyre::eyre!("Missing transaction hashes"))?;
+                tracing::info!("Finding touched bytecode for selected txs");
                 bytecode_touches::find_touched_bytecode(provider_factory, txs)?
                     .into_iter().collect()
             }
             BytecodeSelection::GasGuzzlers { config, size_limit }  => {
+                tracing::info!("Finding gas guzzlers");
                 config.find_gas_guzzlers(provider_factory)?
                     .contract_to_bytecode()?
                     .into_top_guzzlers(*size_limit)

@@ -1,9 +1,8 @@
-use std::{collections::HashSet, sync::Arc};
-use tracing::warn;
+use std::collections::HashSet;
 use eyre::Result;
 use reth_provider::{StateProvider, ProviderFactory};
 use revm::interpreter::{CallInputs, CallOutcome};
-use revm::primitives::{Address, Bytes, B256, keccak256};
+use revm::primitives::{Address, Bytes, B256};
 use revm::{self, EvmContext, Inspector, Database};
 use reth_db::DatabaseEnv;
 

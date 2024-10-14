@@ -11,17 +11,9 @@ use revmc_toolkit_utils::evm::make_provider_factory;
 use revmc_toolkit_sim::sim_builder::{BlockPart, Simulation, StateProviderCacheDB};
 use reth_provider::ProviderFactory;
 use reth_db::DatabaseEnv;
-
+use std::time::{Instant, Duration};
 use super::benches::BenchConfig;
 
-macro_rules! time_it {
-    ($block:expr) => {{
-        let start = std::time::Instant::now();
-        let result = $block;
-        let elapsed = start.elapsed();
-        (result, elapsed)
-    }};
-}
 
 pub fn run_call(
     call: SimCall, 
@@ -40,9 +32,7 @@ pub fn run_call(
     )?;
     let mut sim = SimConfig::from(ext_ctx)
         .make_call_sim(call, call_input.clone())?;
-
-    sim.run()?;
-    let (_result, elapsed) = time_it!({ sim.run()? });
+    let (_result, elapsed) = time_fn(|| sim.run())?;
 
     println!("CallType: {call:?} ran successfully");
     println!("Elapsed: {:?}", elapsed);
@@ -68,8 +58,7 @@ pub fn run_tx(tx_hash: B256, run_type: SimRunType, config: &BenchConfig) -> Resu
         };
 
     let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx).make_tx_sim(tx_hash)?;
-    sim.run()?;
-    let (_result, elapsed) = time_it!({ sim.run()? });
+    let (_result, elapsed) = time_fn(|| sim.run())?;
     
     check_tx_sim_validity(
         &provider_factory, 
@@ -117,8 +106,7 @@ pub fn run_block(
 
     let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
         .make_block_sim(block_num, block_chunk)?;
-    sim.run()?;
-    let (_result, elapsed) = time_it!({ sim.run()? });
+    let (_result, elapsed) = time_fn(|| sim.run())?;
     
     check_tx_sim_validity(
         &provider_factory, 
@@ -143,9 +131,7 @@ fn check_tx_sim_validity(
 ) -> Result<()> {
     let sim_results = sim.run()?;
 
-    for (i, tx_hash) in tx_hashes.into_iter().enumerate() {
-        println!("tx_hash: {tx_hash:?}; i: {i}; sim_results[i]: {:?}", sim_results[i]);
-        
+    for (i, tx_hash) in tx_hashes.into_iter().enumerate() {        
         let (_tx, meta) = provider_factory.transaction_by_hash_with_meta(tx_hash)?
             .ok_or_eyre("tx not found")?;
         let receipt = provider_factory.receipt_by_hash(tx_hash)?
@@ -214,4 +200,19 @@ fn check_tx_sim_validity(
     }
 
     Ok(())
+}
+
+fn time_fn<F, R>(mut fnc: F) -> Result<(R, Duration)> 
+where
+    F: FnMut() -> Result<R>,
+{
+    // Warmup
+    for _ in 0..5 {
+        fnc()?;
+    }
+    let start = Instant::now();
+    let res = fnc()?;
+    let elapsed = start.elapsed();
+    println!("Elapsed: {:?}", elapsed);
+    Ok((res, elapsed))
 }

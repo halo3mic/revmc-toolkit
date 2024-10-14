@@ -195,7 +195,7 @@ impl<K: Eq + std::hash::Hash> AddAssign for MapWrapper<K, ContractUsage> {
 
 #[derive(Debug, Clone, Default)]
 pub struct GasGuzzlerConfig {
-    pub start_block: u64,
+    pub start_block: Option<u64>,
     pub end_block: Option<u64>,
     pub sample_size: Option<u64>,
     pub seed: Option<[u8; 32]>,
@@ -203,11 +203,9 @@ pub struct GasGuzzlerConfig {
 
 impl GasGuzzlerConfig {
 
-    pub fn new(start_block: u64) -> Self {
-        Self {
-            start_block,
-            ..Default::default()
-        }
+    pub fn with_start_block(mut self, start_block: u64) -> Self {
+        self.start_block = Some(start_block);
+        self
     }
 
     pub fn with_end_block(mut self, end_block: u64) -> Self {
@@ -230,8 +228,9 @@ impl GasGuzzlerConfig {
         provider_factory: ProviderFactory<DatabaseEnv>,
     ) -> Result<GasGuzzlerResult<Address>> {
         let end_block = self.end_block.unwrap_or(provider_factory.last_block_number()?);
-        let sample_size = self.sample_size.unwrap_or(end_block-self.start_block);
-        let sample_iter = utils::rnd::random_sequence(self.start_block, end_block, sample_size as usize, self.seed)?;
+        let start_block = self.start_block.unwrap_or(end_block-10_000);
+        let sample_size = self.sample_size.unwrap_or((end_block-start_block)/10);
+        let sample_iter = utils::rnd::random_sequence(start_block, end_block, sample_size as usize, self.seed)?;
         
         let contract_usage = sample_iter
             .into_par_iter()
@@ -287,7 +286,8 @@ mod tests {
         let provider_factory = utils::evm::make_provider_factory(&db_path).unwrap();
         let block = 20392617;
         let end_block = block+200_000;
-        let config = GasGuzzlerConfig::new(block)
+        let config = GasGuzzlerConfig::default()
+            .with_start_block(block)
             .with_end_block(end_block)
             .with_sample_size(1000);
         let gas_guzzlers = config.find_gas_guzzlers(provider_factory.clone())?

@@ -8,6 +8,7 @@ use reth_primitives::Bytes;
 
 use revmc_toolkit_utils::rnd as rnd_utils;
 use crate::utils::sim::{SimCall, SimConfig, SimRunType, self as sim_utils};
+use crate::cli::BytecodeSelectionCli;
 
 
 // todo: make bench config a struct
@@ -69,7 +70,7 @@ pub fn run_block_benchmarks(block_num: u64, config: &BenchConfig, block_chunk: O
         info!("Running {}", symbol.to_uppercase());
 
         let ext_ctx = sim_utils::make_ext_ctx(run_type, bytecodes.clone(), Some(&config.dir_path))?;
-        let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx) // todo: make arch optional?
+        let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
             .make_block_sim(block_num, block_chunk)?;
 
         // check_fn_validity(&mut fnc)?;
@@ -137,6 +138,22 @@ impl BenchConfig {
         compile_selection: BytecodeSelection
     ) -> Self {
         Self { dir_path, reth_db_path, compile_selection }
+    }
+
+    pub fn set_bytecode_selection_opt(&mut self, selection: Option<BytecodeSelectionCli>) {
+        if let Some(selection) = selection {
+            self.set_bytecode_selection(selection);
+        }
+    }
+
+    pub fn set_bytecode_selection(&mut self, selection: BytecodeSelectionCli) {
+        self.compile_selection = match selection {
+            BytecodeSelectionCli::Selected => BytecodeSelection::Selected,
+            BytecodeSelectionCli::GasGuzzlers(config) => {
+                let (config, size_limit) = config.into();
+                BytecodeSelection::GasGuzzlers { config, size_limit }
+            }
+        };
     }
 }
 
@@ -263,6 +280,8 @@ pub struct BlockRangeArgs {
 use crate::cli;
 use crate::utils;
 
+
+// todo: into cli
 impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
     type Error = eyre::Error;
 

@@ -37,15 +37,17 @@ fn main() -> Result<()> {
                 .into_iter().collect::<Result<Vec<_>>>()?;
         }
         Commands::Run(run_args) => {
-            let config = BenchConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected);
+            let mut config = BenchConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected);
             
             match run_args {
-                RunArgsCli::Tx { tx_hash, run_type } => {
+                RunArgsCli::Tx { tx_hash, run_type, bytecode_selection } => {
+                    config.set_bytecode_selection_opt(bytecode_selection);
                     let tx_hash = B256::from_str(&tx_hash)?;
                     info!("Running sim for tx: {tx_hash:?}");
                     runners::run_tx(tx_hash, run_type.parse()?, &config)?;
                 }
-                RunArgsCli::Block { run_type, block_args } => {
+                RunArgsCli::Block { run_type, block_args, bytecode_selection } => {
+                    config.set_bytecode_selection_opt(bytecode_selection);
                     let BlockArgsCli { block_num, tob_block_chunk, bob_block_chunk } = block_args;
                     let block_chunk = tob_block_chunk
                         .map(|c| BlockPart::TOB(c))
@@ -67,21 +69,23 @@ fn main() -> Result<()> {
             }
         }
         Commands::Bench(bench_args) => {
-            let config = BenchConfig::new(
+            let mut config = BenchConfig::new(
                 dir_path, 
                 reth_db_path, 
                 BytecodeSelection::Selected // todo: add opt for gas guzzlers
             );
             
             match bench_args {
-                BenchType::Tx { tx_hash } => {
+                BenchType::Tx { tx_hash, bytecode_selection } => {
                     info!("Running bench for tx: {tx_hash:?}");
+                    config.set_bytecode_selection_opt(bytecode_selection);
                     let tx_hash = B256::from_str(&tx_hash)?;
                     benches::run_tx_benchmarks(tx_hash, &config)?;
                 }
-                BenchType::Block(block_args) => {
+                BenchType::Block { block_args, bytecode_selection } => {
                     let BlockArgsCli { block_num, tob_block_chunk, bob_block_chunk } = block_args;
                     info!("Running bench for block: {:?}", block_num);
+                    config.set_bytecode_selection_opt(bytecode_selection);
                     let block_chunk = tob_block_chunk
                         .map(|c| BlockPart::TOB(c))
                         .or(bob_block_chunk.map(|c| BlockPart::BOB(c)));
@@ -93,9 +97,10 @@ fn main() -> Result<()> {
                     let input = call_type.default_input();
                     benches::run_call_benchmarks(SimCall::Fibbonacci, input, &config)?;
                 }
-                BenchType::BlockRange(range_args) => {
-                    info!("Comparing block range: {}", range_args.block_range);
-                    let args = range_args.try_into()?;
+                BenchType::BlockRange { block_range_args, bytecode_selection } => {
+                    info!("Comparing block range: {}", block_range_args.block_range);
+                    config.set_bytecode_selection_opt(bytecode_selection);
+                    let args = block_range_args.try_into()?;
                     benches::compare_block_range(args, &config)?;
                 }
             }
