@@ -148,14 +148,93 @@ impl Into<(GasGuzzlerConfig, usize)> for GasGuzzlersCli {
     }
 }
 
-fn hashed(seed_str: String) -> [u8; 32] {
-    revm::primitives::keccak256(seed_str.as_bytes()).0
+fn hashed<T: AsRef<str>>(seed_str: T) -> [u8; 32] {
+    revm::primitives::keccak256(seed_str.as_ref().as_bytes()).0
 }
 
-// fn seed_str_to_bytes(seed_str: String) -> [u8; 32] {
-//     let mut seed = [0u8; 32];
-//     let bytes = hex::decode(seed_str).expect("Invalid seed");
-//     seed.copy_from_slice(&bytes);
-//     seed
-// }
+use crate::{benches::BlockRangeArgs, utils, BlockPart};
+use revmc_toolkit_utils::rnd as rnd_utils;
+use std::path::PathBuf;
+use eyre::Result;
 
+impl BlockRangeArgsCli {
+
+    fn block_iter(&self) -> Result<Vec<u64>> {
+        let (start, end, range_size) = self.start_end_range()?;
+        let block_iter = 
+            if let Some(sample_size) = self.sample_size {
+                if sample_size > range_size {
+                    return Err(eyre::eyre!("Invalid sample size"));
+                }
+                let rnd_seed = self.rnd_seed.as_ref().map(hashed);
+                rnd_utils::random_sequence(start, end, sample_size as usize, rnd_seed)?
+            } else {
+                (start..end).collect()
+            };
+        Ok(block_iter)
+    }
+
+    fn out_path(&self) -> Result<PathBuf> {
+        let default_out_dir = std::env::current_dir()?
+            .join(".data/measurements");
+        utils::make_dir(&default_out_dir)?;
+        
+        let label = match self.label {
+            Some(ref label) => label.clone(),
+            None => {
+                let (start, end, range_size) = self.start_end_range()?;
+                let range_size = self.sample_size.unwrap_or(range_size);
+                let epoch_now = utils::epoch_now()?;
+                format!("block_range_{start}_{end}_{range_size}_{epoch_now}")
+            }};
+        let out_path = self.out_dir.clone()
+            .map(|dir_path_str| PathBuf::from(dir_path_str))
+            .unwrap_or(default_out_dir)
+            .join(label + ".csv");
+
+        Ok(out_path)
+    }
+
+    fn block_chunk(&self) -> Option<BlockPart> {
+        if let Some(tob) = self.tob_block_chunk {
+            Some(BlockPart::TOB(tob))
+        } else if let Some(bob) = self.bob_block_chunk {
+            Some(BlockPart::BOB(bob))
+        } else {
+            None
+        }
+    }
+
+    fn start_end_range(&self) -> Result<(u64, u64, u32)> {
+        let [start, end, ..] = self.block_range
+            .split_terminator("..")
+            .collect::<Vec<_>>()[..]
+            else {
+                return Err(eyre::eyre!("Invalid block range format"));
+            };
+        let start = start.parse::<u64>()?;
+        let end = end.parse::<u64>()?;
+        if end < start {
+            return Err(eyre::eyre!("End block must be greater than start block"));
+        }
+        let range_size = (end-start) as u32;
+        Ok((start, end, range_size))
+    }
+
+
+}
+
+impl TryInto<BlockRangeArgs> for BlockRangeArgsCli {
+    type Error = eyre::Error;
+
+    fn try_into(self) -> Result<BlockRangeArgs, Self::Error> {
+        Ok(BlockRangeArgs {
+            measurement_ms: self.measurement_ms.unwrap_or(5_000),
+            warmup_ms: self.warmup_ms.unwrap_or(3_000),
+            block_chunk: self.block_chunk(),
+            block_iter: self.block_iter()?,
+            out_path: self.out_path()?,
+            run_rnd_txs: self.run_rnd_txs,
+        })
+    }
+}

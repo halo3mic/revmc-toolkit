@@ -269,73 +269,10 @@ struct MeasureRecord {
 }
 
 pub struct BlockRangeArgs {
-    block_iter: Vec<u64>,
-    out_path: PathBuf,
-    warmup_ms: u32,
-    measurement_ms: u32,
-    block_chunk: Option<BlockPart>,
-    run_rnd_txs: bool,
-}
-
-use crate::cli;
-use crate::utils;
-
-
-// todo: into cli
-impl TryFrom<cli::BlockRangeArgsCli> for BlockRangeArgs {
-    type Error = eyre::Error;
-
-    // todo: declare default as constants
-    fn try_from(cli_args: cli::BlockRangeArgsCli) -> Result<Self, Self::Error> {
-        let [start, end, ..] = cli_args.block_range
-            .split_terminator("..")
-            .collect::<Vec<_>>()[..]
-            else {
-                return Err(eyre::eyre!("Invalid block range format"));
-            };
-        let start = start.parse::<u64>()?;
-        let end = end.parse::<u64>()?;
-        if end < start {
-            return Err(eyre::eyre!("End block must be greater than start block"));
-        }
-        let default_out_dir = std::env::current_dir()?
-            .join(".data/measurements");
-        utils::make_dir(&default_out_dir)?;
-        // todo: instead of epoch choose more representable label
-        let label = cli_args.label.unwrap_or(format!("block_range_{}", utils::epoch_now()?));
-        let out_path = cli_args.out_dir
-            .map(|dir_path_str| PathBuf::from(dir_path_str))
-            .unwrap_or(default_out_dir)
-            .join(label + ".csv");
-        let warmup_ms = cli_args.warmup_ms.unwrap_or(3_000);
-        let measurement_ms = cli_args.measurement_ms.unwrap_or(5_000);
-        let range_size = (end-start) as u32;
-        let block_iter = 
-            if let Some(sample_size) = cli_args.sample_size {
-                if sample_size > range_size {
-                    return Err(eyre::eyre!("Invalid sample size"));
-                }
-                let rnd_seed = cli_args.rnd_seed.map(|seed| revm::primitives::keccak256(seed.as_bytes()).0); // todo: instead of param into env
-                rnd_utils::random_sequence(start, end, sample_size as usize, rnd_seed)?
-            } else {
-                (start..end).collect()
-            };
-        let block_chunk = 
-            if let Some(tob) = cli_args.tob_block_chunk {
-                Some(BlockPart::TOB(tob))
-            } else if let Some(bob) = cli_args.bob_block_chunk {
-                Some(BlockPart::BOB(bob))
-            } else {
-                None
-            };
-
-        Ok(Self {
-            block_chunk,
-            run_rnd_txs: cli_args.run_rnd_txs,
-            block_iter,
-            out_path,
-            warmup_ms,
-            measurement_ms,
-        })
-    }
+    pub block_iter: Vec<u64>,
+    pub out_path: PathBuf,
+    pub warmup_ms: u32,
+    pub measurement_ms: u32,
+    pub block_chunk: Option<BlockPart>,
+    pub run_rnd_txs: bool,
 }
