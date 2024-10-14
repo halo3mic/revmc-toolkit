@@ -1,4 +1,4 @@
-## REVMC Toolkit
+# REVMC Toolkit
 
 Tools for building, loading and integrating [revmc](https://github.com/paradigmxyz/revmc) JIT & AOT compiled functions in revm environment. 
 
