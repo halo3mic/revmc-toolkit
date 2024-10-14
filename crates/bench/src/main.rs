@@ -13,7 +13,7 @@ use clap::Parser;
 use revmc_toolkit_utils::{evm as evm_utils, build as build_utils};
 use revmc_toolkit_sim::sim_builder::BlockPart;
 use utils::sim::{BytecodeSelection, SimCall};
-use benches::BenchConfig;
+use benches::RunConfig;
 
 
 fn main() -> Result<()> {
@@ -37,14 +37,14 @@ fn main() -> Result<()> {
                 .into_iter().collect::<Result<Vec<_>>>()?;
         }
         Commands::Run(run_args) => {
-            let mut config = BenchConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected);
+            let mut config = RunConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected);
             
             match run_args {
                 RunArgsCli::Tx { tx_hash, run_type, bytecode_selection } => {
                     config.set_bytecode_selection_opt(bytecode_selection);
                     let tx_hash = B256::from_str(&tx_hash)?;
                     info!("Running sim for tx: {tx_hash:?}");
-                    runners::run_tx(tx_hash, run_type.parse()?, &config)?;
+                    config.run_tx(tx_hash, run_type.parse()?)?;
                 }
                 RunArgsCli::Block { run_type, block_args, bytecode_selection } => {
                     config.set_bytecode_selection_opt(bytecode_selection);
@@ -53,23 +53,22 @@ fn main() -> Result<()> {
                         .map(|c| BlockPart::TOB(c))
                         .or(bob_block_chunk.map(|c| BlockPart::BOB(c)));
                     info!("Running sim for block: {block_num:?}");
-                    runners::run_block(block_num, run_type.parse()?, &config, block_chunk)?;
+                    config.run_block(block_num, run_type.parse()?, block_chunk)?;
                 }
                 RunArgsCli::Call { input, run_type } => {
                     let call_type = SimCall::Fibbonacci;
                     let input = input.unwrap_or(call_type.default_input());
                     info!("Running sim for call: {call_type:?} with input: {input:?}");
-                    runners::run_call(
+                    config.run_call(
                         call_type, 
                         input,
                         run_type.parse()?,
-                        Some(&config.dir_path)
                     )?;
                 }
             }
         }
         Commands::Bench(bench_args) => {
-            let mut config = BenchConfig::new(
+            let mut config = RunConfig::new(
                 dir_path, 
                 reth_db_path, 
                 BytecodeSelection::Selected // todo: add opt for gas guzzlers
@@ -80,7 +79,7 @@ fn main() -> Result<()> {
                     info!("Running bench for tx: {tx_hash:?}");
                     config.set_bytecode_selection_opt(bytecode_selection);
                     let tx_hash = B256::from_str(&tx_hash)?;
-                    benches::run_tx_benchmarks(tx_hash, &config)?;
+                    config.bench_tx(tx_hash)?;
                 }
                 BenchType::Block { block_args, bytecode_selection } => {
                     let BlockArgsCli { block_num, tob_block_chunk, bob_block_chunk } = block_args;
@@ -89,19 +88,19 @@ fn main() -> Result<()> {
                     let block_chunk = tob_block_chunk
                         .map(|c| BlockPart::TOB(c))
                         .or(bob_block_chunk.map(|c| BlockPart::BOB(c)));
-                    benches::run_block_benchmarks(block_num, &config, block_chunk)?;
+                    config.bench_block(block_num, block_chunk)?;
                 }
                 BenchType::Call => {
                     let call_type = SimCall::Fibbonacci; // todo: different call opt
                     info!("Running bench for call: {call_type:?}");
                     let input = call_type.default_input();
-                    benches::run_call_benchmarks(SimCall::Fibbonacci, input, &config)?;
+                    config.bench_call(SimCall::Fibbonacci, input)?;
                 }
                 BenchType::BlockRange { block_range_args, bytecode_selection } => {
                     info!("Comparing block range: {}", block_range_args.block_range);
                     config.set_bytecode_selection_opt(bytecode_selection);
                     let args = block_range_args.try_into()?;
-                    benches::compare_block_range(args, &config)?;
+                    config.bench_block_range(args)?;
                 }
             }
         }
