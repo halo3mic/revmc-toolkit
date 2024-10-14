@@ -9,7 +9,7 @@ use revmc_toolkit_sim::sim_builder::{
     self, BlockPart, CallSimBuilderExt, Simulation, 
     StateProviderCacheDB, TxsSimBuilderExt,
 };
-use revmc_toolkit_load::{EvmCompilerFnLoader, RevmcExtCtx, revmc_register_handler};
+use revmc_toolkit_load::{EvmCompilerFnLoader, RevmcExtCtx, EvmCompilerFns, revmc_register_handler};
 use revmc_toolkit_utils::build as build_utils;
 
 pub struct SimConfig<P> {
@@ -81,15 +81,22 @@ impl FromStr for SimRunType {
     }
 }
 
-pub fn make_ext_ctx<'a>(
+pub fn make_ext_ctx(
     run_type: SimRunType, 
     bytecode: Vec<Vec<u8>>, 
     aot_dir: Option<&PathBuf>,
 ) -> Result<RevmcExtCtx> {
+    make_compiled_fns(run_type, bytecode, aot_dir)
+        .map(Into::into)
+}
+
+pub fn make_compiled_fns(
+    run_type: SimRunType, 
+    bytecode: Vec<Vec<u8>>, 
+    aot_dir: Option<&PathBuf>,
+) -> Result<EvmCompilerFns> {
     Ok(match run_type {
-        SimRunType::Native => {
-            RevmcExtCtx::default()
-        }
+        SimRunType::Native => EvmCompilerFns::default(),
         SimRunType::JITCompiled => {
             build_utils::compile_jit_from_codes(bytecode, None)?
                 .into_iter()
@@ -118,7 +125,7 @@ pub enum BytecodeSelection {
         size_limit: usize
     },
 }
-// todo: this shouldnt be together
+
 impl BytecodeSelection {
     pub fn bytecodes(
         &self, 

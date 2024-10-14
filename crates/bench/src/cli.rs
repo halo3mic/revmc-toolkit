@@ -166,8 +166,8 @@ impl BlockRangeArgsCli {
                 if sample_size > range_size {
                     return Err(eyre::eyre!("Invalid sample size"));
                 }
-                let rnd_seed = self.rnd_seed.as_ref().map(hashed);
-                rnd_utils::random_sequence(start, end, sample_size as usize, rnd_seed)?
+                let seed = self.hashed_seed();
+                rnd_utils::random_sequence(start, end, sample_size as usize, seed)?
             } else {
                 (start..end).collect()
             };
@@ -185,7 +185,7 @@ impl BlockRangeArgsCli {
                 let (start, end, range_size) = self.start_end_range()?;
                 let range_size = self.sample_size.unwrap_or(range_size);
                 let epoch_now = utils::epoch_now()?;
-                format!("block_range_{start}_{end}_{range_size}_{epoch_now}")
+                format!("f{start}t{end}s{range_size}e{epoch_now}")
             }};
         let out_path = self.out_dir.clone()
             .map(|dir_path_str| PathBuf::from(dir_path_str))
@@ -221,6 +221,10 @@ impl BlockRangeArgsCli {
         Ok((start, end, range_size))
     }
 
+    fn hashed_seed(&self) -> Option<[u8; 32]> {
+        self.rnd_seed.as_ref().map(hashed)
+    }
+
 
 }
 
@@ -235,6 +239,7 @@ impl TryInto<BlockRangeArgs> for BlockRangeArgsCli {
             block_iter: self.block_iter()?,
             out_path: self.out_path()?,
             run_rnd_txs: self.run_rnd_txs,
+            seed: self.hashed_seed(),
         })
     }
 }

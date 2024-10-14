@@ -3,7 +3,7 @@ use revm::{
     primitives::B256,
     Database,
 };
-use libloading::Library;
+pub use libloading::Library;
 pub use revmc::EvmCompilerFn;
 
 use rustc_hash::FxHashMap;
@@ -14,7 +14,7 @@ use revm::primitives::Address;
 // todo: rename as it is not only aot
 
 #[derive(Default, Clone, Debug)]
-pub struct EvmCompilerFns(Arc<FxHashMap<B256, (EvmCompilerFn, ReferenceDropObject)>>);
+pub struct EvmCompilerFns(pub Arc<FxHashMap<B256, (EvmCompilerFn, ReferenceDropObject)>>);
 
 impl EvmCompilerFns {
     pub fn get(&self, bytecode_hash: &B256) -> Option<&(EvmCompilerFn, ReferenceDropObject)> {

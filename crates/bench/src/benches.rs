@@ -2,23 +2,24 @@ use std::{path::PathBuf, time::Duration};
 use tracing::{info, warn, span, Level};
 use criterion::Criterion;
 use eyre::{OptionExt, Result};
-use revm::primitives::B256;
-use reth_provider::BlockReader;
-use reth_primitives::Bytes;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use revmc_toolkit_utils::evm::make_provider_factory;
-use revmc_toolkit_sim::sim_builder::BlockPart;
-use revmc_toolkit_sim::bytecode_touches;
-use reth_provider::ProviderFactory;
+
+use revm::primitives::{B256, Bytes};
+use reth_provider::{ProviderFactory, BlockReader};
 use reth_db::DatabaseEnv;
-use revmc_toolkit_utils::rnd as rnd_utils;
-use crate::utils::sim::{SimCall, SimConfig, SimRunType, self as sim_utils};
+
+use revmc_toolkit_load::EvmCompilerFns;
+use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
+use revmc_toolkit_sim::{sim_builder::BlockPart, bytecode_touches};
 use crate::cli::BytecodeSelectionCli;
-use crate::utils::sim::BytecodeSelection;
-use crate::utils::bench as bench_utils;
+use crate::utils::{
+    sim::{SimCall, SimConfig, SimRunType, BytecodeSelection, self as sim_utils},
+    bench as bench_utils,
+};
 
 
 // todo: sample_size and measurement_time as args
+// todo: add jit optionally
 // todo: reimplement verification
 
 pub(crate) struct RunConfig<T, U> {
@@ -44,11 +45,9 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             .sample_size(100)
             .measurement_time(Duration::from_secs(5));
     
-        let provider_factory = make_provider_factory(&self.reth_db_path)?;
-    
+        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;    
         let bytecodes = self.compile_selection.bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
     
-        // todo: this is also repeated
         for (symbol, run_type) in [
             ("aot", SimRunType::AOTCompiled),
             ("native", SimRunType::Native),
@@ -57,7 +56,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             info!("Running {}", symbol.to_uppercase());
     
             let ext_ctx = sim_utils::make_ext_ctx(run_type, bytecodes.clone(), Some(&self.dir_path))?;
-            let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx) // todo: make arch optional?
+            let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
                 .make_tx_sim(tx_hash)?;
     
             // check_fn_validity(&mut fnc)?;
@@ -76,7 +75,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             .sample_size(100)
             .measurement_time(Duration::from_secs(5));
     
-        let provider_factory = make_provider_factory(&self.reth_db_path)?;
+        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
         let bytecodes = self.compile_selection.bytecodes(
             provider_factory.clone(),
             Some(txs_for_block(&provider_factory, block_num)?)
@@ -101,14 +100,23 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         Ok(())
     }
 
-
+    // todo: improve
     pub fn bench_block_range(&self, args: BlockRangeArgs) -> Result<()> {
-        let provider_factory = make_provider_factory(&self.reth_db_path)?;
-        let mut writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
-
-        let span = span!(Level::INFO, "compare_block_range");
+        let span = span!(Level::INFO, "bench_block_range");
         let _guard = span.enter();
 
+        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
+        let mut writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
+
+        let bytecode = 
+            if let BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } = &self.compile_selection {
+                Some(gconfig.find_gas_guzzlers(provider_factory.clone())?
+                    .contract_to_bytecode()?
+                    .into_top_guzzlers(*size_limit))
+            } else {
+                None
+            };
+        let mut compiled_fns_inner = EvmCompilerFns::default();
 
         let block_iter = args.block_iter;
         for (symbol, run_type) in [
@@ -116,35 +124,29 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             ("aot", SimRunType::AOTCompiled),
             // ("jit", SimRunType::JITCompiled),
         ] {
-            let mut ext_ctx = None;
-            if let BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } = &self.compile_selection {
-                let bytecodes = gconfig.find_gas_guzzlers(provider_factory.clone())?
-                    .contract_to_bytecode()?
-                    .into_top_guzzlers(*size_limit);
-                ext_ctx = Some(sim_utils::make_ext_ctx(run_type.clone(), bytecodes, Some(&self.dir_path))?);
+            if let Some(bytecode) = bytecode.as_ref() {
+                compiled_fns_inner = sim_utils::make_compiled_fns(run_type.clone(), bytecode.clone(), Some(&self.dir_path))?;
             }
             let measurements = block_iter.clone().into_par_iter().map(|block_num| {
-                let mut ext_ctx = ext_ctx.clone();
-
-
                 info!("Running {} for block {block_num}", symbol.to_uppercase());
 
-                if let BytecodeSelection::Selected = self.compile_selection {
-                    let txs = txs_for_block(&provider_factory, block_num)?;
-                    let bytecodes = bytecode_touches::find_touched_bytecode(provider_factory.clone(), txs)?
-                        .into_iter().collect();
-                    // todo: cached external ctx from previous blocks
-                    ext_ctx = Some(sim_utils::make_ext_ctx(run_type.clone(), bytecodes, Some(&self.dir_path))?);
-                }
+                let _compiled_fns = 
+                    if bytecode.is_none() {
+                        let txs = txs_for_block(&provider_factory, block_num)?;
+                        let bytecodes = bytecode_touches::find_touched_bytecode(provider_factory.clone(), txs)?
+                            .into_iter().collect();
+                        sim_utils::make_compiled_fns(run_type.clone(), bytecodes, Some(&self.dir_path))?
+                    } else {
+                        compiled_fns_inner.clone()
+                    };
 
                 let sim_config = SimConfig::new(
-                    provider_factory.clone(), 
-                    ext_ctx.clone().expect("ExtCtx not found")
+                    provider_factory.clone(),
+                    _compiled_fns.into(),
                 );
 
                 let (mut sim, m_id) = 
                     if args.run_rnd_txs {
-                        // todo: move this somewhere else
                         let block = provider_factory.block(block_num.into())?
                             .ok_or_eyre("Block not found")?;
                         if block.body.is_empty() {
@@ -159,7 +161,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
                                 }
                             })
                             .unwrap_or(block.body.len());
-                        let tx_index = rnd_utils::random_sequence(0, txs_len, 1, Some([4;32]))?[0]; // todo: include tx-seed in config?
+                        let tx_index = rnd_utils::random_sequence(0, txs_len, 1, args.seed)?[0]; // todo: seed in params
                         let tx_hash = block.body[tx_index].hash;
                         info!("Running random tx: {tx_hash:?}");
 
@@ -281,4 +283,5 @@ pub struct BlockRangeArgs {
     pub measurement_ms: u32,
     pub block_chunk: Option<BlockPart>,
     pub run_rnd_txs: bool,
+    pub seed: Option<[u8;32]>
 }
