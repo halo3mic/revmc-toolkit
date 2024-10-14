@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand, Args};
+use revm::primitives::Bytes;
 
 
 #[derive(Parser)]
@@ -12,7 +13,8 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     Build(BuildArgsCli),
-    // Run(RunArgsCli), // todo
+    #[command(subcommand)]
+    Run(RunArgsCli), // todo
     #[command(subcommand)]
     Bench(BenchType),
 }
@@ -20,9 +22,30 @@ pub enum Commands {
 #[derive(Subcommand)]
 pub enum BenchType {
     Tx { tx_hash: String },
-    Block(BenchBlockArgsCli),
+    Block(BlockArgsCli),
     Call,
     BlockRange(BlockRangeArgsCli),
+}
+
+#[derive(Subcommand)]
+pub enum RunArgsCli {
+    Tx { 
+        tx_hash: String,
+        #[arg(long)]
+        run_type: String,
+    },
+    Block {
+        #[clap(flatten)]
+        block_args: BlockArgsCli,
+        #[arg(long)]
+        run_type: String,
+    },
+    Call {
+        #[arg(long)]
+        run_type: String,
+        #[arg(long)]
+        input: Option<Bytes>,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -31,7 +54,7 @@ pub struct BuildArgsCli {
 }
 
 #[derive(Args, Debug)]
-pub struct BenchBlockArgsCli {
+pub struct BlockArgsCli {
     pub block_num: u64,
     #[arg(long, help = "Proportion of the block to use - top of the block.")]
     pub tob_block_chunk: Option<f32>,

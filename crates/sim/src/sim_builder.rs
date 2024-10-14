@@ -30,7 +30,7 @@ pub trait CallSimBuilderExt<ExtCtx> {
     fn into_call_sim(self, bytecode: Bytecode, input: Bytes) -> Result<Simulation<ExtCtx, InMemoryDB>>;
 }
 
-impl<ExtCtx: 'static, P> CallSimBuilderExt<ExtCtx> for SimulationBuilder<ExtCtx, P> {
+impl<P, ExtCtx: 'static> CallSimBuilderExt<ExtCtx> for SimulationBuilder<P, ExtCtx, InMemoryDB> {
     fn into_call_sim(mut self, bytecode: Bytecode, input: Bytes) -> Result<Simulation<ExtCtx, InMemoryDB>> {
         let fibonacci_address = Address::from_slice(&[1; 20]);
         let mut account_info = AccountInfo::default();
@@ -44,8 +44,9 @@ impl<ExtCtx: 'static, P> CallSimBuilderExt<ExtCtx> for SimulationBuilder<ExtCtx,
         tx_env.transact_to = TransactTo::Call(fibonacci_address);
         tx_env.data = input;
 
-        let ext_ctx = self.ext_ctx.take().ok_or_eyre("No external context")?;
-        let evm = utils::evm::make_evm(db, ext_ctx, None, None);
+        let ctx = self.ext_ctx.take().ok_or_eyre("No external context")?;
+        let reg = self.handler_register.take();
+        let evm = utils::evm::make_evm(db, ctx, reg, None);
 
         let execute_fn = Box::new(move |evm: &mut Evm<ExtCtx, InMemoryDB>| {
             evm.context.evm.env.tx = tx_env.clone();
@@ -115,7 +116,7 @@ pub trait TxsSimBuilderExt<ExtCtx, S> {
 }
 
 impl<ExtCtx: 'static> TxsSimBuilderExt<ExtCtx, Simulation<ExtCtx, StateProviderCacheDB>> 
-for SimulationBuilder<ExtCtx, ProviderFactory<DatabaseEnv>> 
+for SimulationBuilder<ProviderFactory<DatabaseEnv>, ExtCtx, StateProviderCacheDB> 
 {
     
     fn provider_factory(&self) -> &ProviderFactory<DatabaseEnv> {
@@ -173,52 +174,57 @@ for SimulationBuilder<ExtCtx, ProviderFactory<DatabaseEnv>>
 }
 
 
-pub struct SimulationBuilder<ExtCtx, P> {
+pub struct SimulationBuilder<P, ExtCtx, DB: Database> {
     provider_factory: P,
     ext_ctx: Option<ExtCtx>,
-    handler_register: Option<HandleRegister<ExtCtx, StateProviderCacheDB>>,
+    handler_register: Option<HandleRegister<ExtCtx, DB>>,
+    _db: std::marker::PhantomData<DB>,
 }
 
-impl Default for SimulationBuilder<(), ()> {
+impl<DB: Database + DatabaseRef> Default for SimulationBuilder<(), (), DB> {
     fn default() -> Self {
         Self {
             provider_factory: (),
             ext_ctx: None,
             handler_register: None,
+            _db: std::marker::PhantomData,
         }
     }
 }
 
-impl<ExtCtx, P> SimulationBuilder<ExtCtx, P> {
+impl<P, ExtCtx, DB: Database> SimulationBuilder<P, ExtCtx, DB> {
 
-    pub fn with_ext_ctx<'a, ExtCtxInner>(self, ext_ctx: ExtCtxInner) -> SimulationBuilder<ExtCtxInner, P> {
-        SimulationBuilder { 
+    pub fn with_ext_ctx<'a, ExtCtxInner>(self, ext_ctx: ExtCtxInner) -> SimulationBuilder<P, ExtCtxInner, DB> {
+        SimulationBuilder {
             provider_factory: self.provider_factory,
             handler_register: None,
             ext_ctx: Some(ext_ctx),
+            _db: self._db,
         }
     }
 
-    pub fn with_handle_register(self, handle_register: HandleRegister<ExtCtx, StateProviderCacheDB>) -> Self {
+    pub fn with_handle_register(self, handle_register: HandleRegister<ExtCtx, DB>) -> Self {
         Self {
             provider_factory: self.provider_factory,
             handler_register: Some(handle_register),
             ext_ctx: self.ext_ctx,
+            _db: self._db,
         }
     }
 
 }
 
-impl<ExtCtx> SimulationBuilder<ExtCtx, ()> {
+impl<ExtCtx, DB: Database> SimulationBuilder<(), ExtCtx, DB> {
 
     pub fn with_provider_factory(
         self, 
         provider_factory: ProviderFactory<DatabaseEnv>
-    ) -> SimulationBuilder<ExtCtx, ProviderFactory<DatabaseEnv>> {
+    ) -> SimulationBuilder<ProviderFactory<DatabaseEnv>, ExtCtx, DB> {
         SimulationBuilder {
             ext_ctx: None,
             handler_register: None,
             provider_factory,
+            _db: self._db,
         }
     }
 
@@ -272,7 +278,7 @@ pub enum BlockPart {
 
 impl BlockPart {
 
-    fn split_txs<T>(&self, mut txs: Vec<T>) -> (Vec<T>, Vec<T>) {
+    pub fn split_txs<T>(&self, mut txs: Vec<T>) -> (Vec<T>, Vec<T>) {
         let mut pre_execution = vec![];
         match self {
             BlockPart::TOB(chunk) => {

@@ -53,10 +53,6 @@ impl RevmcExtCtx {
         self
     }
 
-    fn get_function(&self, bytecode_hash: B256) -> Option<EvmCompilerFn> {
-        self.compiled_fns.get(&bytecode_hash).map(|f| f.0)
-    }
-
 }
 
 impl From<Vec<(B256, EvmCompilerFn)>> for RevmcExtCtx {

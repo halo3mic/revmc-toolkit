@@ -1,8 +1,8 @@
-use revm::{primitives::{Bytecode, Bytes, B256, hex, keccak256}, InMemoryDB};
+use revm::{primitives::{Bytecode, Bytes, B256, U256, hex, keccak256}, InMemoryDB};
 use reth_provider::ProviderFactory;
 use reth_db::DatabaseEnv;
 
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr};
 use eyre::Result;
 
 use revmc_toolkit_sim::sim_builder::{
@@ -74,8 +74,8 @@ impl FromStr for SimRunType {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             "native" => Ok(SimRunType::Native),
-            "jit_compiled" => Ok(SimRunType::JITCompiled),
-            "aot_compiled" => Ok(SimRunType::AOTCompiled),
+            "jit" => Ok(SimRunType::JITCompiled),
+            "aot" => Ok(SimRunType::AOTCompiled),
             _ => Err(eyre::eyre!("Invalid run type")),
         }
     }
@@ -166,6 +166,11 @@ impl SimCall {
     pub fn bytecode(&self) -> Bytecode {
         match self {
             SimCall::Fibbonacci => Bytecode::new_raw(FIBONACCI_CODE.into()),
+        }
+    }
+    pub fn default_input(&self) -> Bytes {
+        match self {
+            SimCall::Fibbonacci => U256::from(100_000).to_be_bytes_vec().into(),
         }
     }
 }

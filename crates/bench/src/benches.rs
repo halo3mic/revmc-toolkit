@@ -81,8 +81,6 @@ pub fn run_block_benchmarks(block_num: u64, config: &BenchConfig, block_chunk: O
 }
 
 pub fn run_call_benchmarks(call: SimCall, call_input: Bytes, config: &BenchConfig) -> Result<()> {
-    // todo: call bench not working properly
-
     let span = span!(Level::INFO, "bench_call");
     let _guard = span.enter();
     info!("Call: {:?}", call);
@@ -98,7 +96,7 @@ pub fn run_call_benchmarks(call: SimCall, call_input: Bytes, config: &BenchConfi
     ] {
         info!("Running {}", symbol.to_uppercase());
 
-        let bytecode = call.bytecode().bytes().into();
+        let bytecode = call.bytecode().original_bytes().into();
         let ext_ctx = sim_utils::make_ext_ctx(
             run_type, 
             vec![bytecode], 
@@ -116,35 +114,11 @@ pub fn run_call_benchmarks(call: SimCall, call_input: Bytes, config: &BenchConfi
     Ok(())
 }
 
-// todo
-// fn check_fn_validity(fnc: &mut Box<dyn FnMut() -> Result<Simulation>>) -> Result<()> {
-//     for _ in 0..3 {
-//         let result = fnc()?;
-//         if !result.gas_used_matches_expected() {
-//             return Err(eyre::eyre!(
-//                 "Invalid gas used, expected: {:?}, actual: {:?}", 
-//                 result.expected_gas_used, 
-//                 result.gas_used
-//             ));
-//         }
-//         if let Some(wrong_touches) = result.wrong_touches() {
-//             warn!("Invalid touches for contracts {:?}", wrong_touches);
-//             // return Err(eyre::eyre!("Invalid touches for contracts {:?}", wrong_touches));
-//         }
-//         // todo: properly check result success for block eg hash of all ordered successes
-//         // if !result.success() {
-//         //     return Err(eyre::eyre!("Execution failed"));
-//         // }
-//     }
-//     Ok(())
-// }
-
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use revmc_toolkit_utils::evm::make_provider_factory;
 use revmc_toolkit_sim::sim_builder::BlockPart;
 use crate::utils::sim::BytecodeSelection;
 use revmc_toolkit_sim::bytecode_touches;
-use std::sync::Arc;
 use reth_provider::ProviderFactory;
 use reth_db::DatabaseEnv;
 

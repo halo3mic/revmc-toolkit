@@ -22,12 +22,12 @@ reth-primitives = { git = "https://github.com/paradigmxyz/reth", features = ["c-
 reth-rpc-types = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  }
 reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  }
 reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.0.6"  }
-revmc = { git = "https://github.com/paradigmxyz/revmc" }
-revmc-builtins = { git = "https://github.com/paradigmxyz/revmc" }
-revmc-context = { git = "https://github.com/paradigmxyz/revmc" }
-revmc-build = { git = "https://github.com/paradigmxyz/revmc" }
-revm-interpreter = "10.0.0"
-revm = "14.0.0"
+revmc = { git = "https://github.com/halo3mic/revmc", branch = "dev" }
+revmc-builtins = { git = "https://github.com/paradigmxyz/revmc", rev = "9ad12eb" }
+revmc-context = { git = "https://github.com/paradigmxyz/revmc", rev = "9ad12eb" }
+revmc-build = { git = "https://github.com/paradigmxyz/revmc", rev = "9ad12eb" }
+revm-interpreter = "10.0"
+revm = "=14.0.0"
 dotenv = "0.15.0"
 eyre = "0.6.12"
 cc = "1.0.104"

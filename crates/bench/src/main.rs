@@ -1,17 +1,18 @@
 mod utils;
 mod cli;
 mod benches;
+mod runners;
 
 use std::{path::PathBuf, str::FromStr};
-use revm::primitives::{B256, U256};
+use revm::primitives::B256;
 use tracing::{info, span, Level};
-use cli::{Cli, Commands, BenchType, BenchBlockArgsCli, BlockRangeArgsCli};
+use cli::{Cli, Commands, BenchType, RunArgsCli, BlockArgsCli};
 use eyre::{Ok, Result};
 use clap::Parser;
 
 use revmc_toolkit_utils::{evm as evm_utils, build as build_utils};
 use revmc_toolkit_sim::sim_builder::BlockPart;
-use utils::sim::{BytecodeSelection, SimRunType, SimCall};
+use utils::sim::{BytecodeSelection, SimCall};
 use benches::BenchConfig;
 
 
@@ -35,47 +36,36 @@ fn main() -> Result<()> {
             build_utils::compile_aot_from_file_path(&state_provider, &path)?
                 .into_iter().collect::<Result<Vec<_>>>()?;
         }
-        // Commands::Run(run_args) => {
-        //     let run_type = run_args.run_type.parse::<SimRunType>()?;
-        //     info!("Running sim for type: {:?}", run_type);
-
-        //     // if let Some(tx_hash) = run_args.tx_hash {
-        //     //     let tx_hash = B256::from_str(&tx_hash)?;
-        //     //     runners::run_tx(tx_hash, run_type, &BenchConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected))?;
-        //     // }
-
-        //     // todo into call utils
-
-        //     // let result = 
-        //     //     if let Some(tx_hash) = run_args.tx_hash {
-        //     //         let tx_hash = B256::from_str(&tx_hash)?;
-        //     //         info!("Running sim for tx: {tx_hash:?}");
-        //     //         sim::run_tx_sim(tx_hash, run_type, &config)?
-        //     //     } else if let Some(block_num) = run_args.block_num {
-        //     //         let block_num = block_num.parse::<u64>()?;
-        //     //         let block_chunk = run_args.tob_block_chunk
-        //     //             .map(|c| BlockPart::TOB(c))
-        //     //             .or(run_args.bob_block_chunk.map(|c| BlockPart::BOB(c)));
-        //     //         info!("Running sim for block: {block_num:?}");
-        //     //         sim::run_block_sim(block_num, run_type, &config, block_chunk)?
-        //     //     } else {
-        //     //         let call_type = SimCall::Fibbonacci; // todo: different call opt
-        //     //         info!("Running sim for call: {call_type:?}");
-        //     //         sim::run_call_sim(call_type, run_type, &config)?
-        //     //     };
-
-        //     // todo: reimplement touches and success monitoring
-        //     // result.contract_touches.into_iter().for_each(|(address, touch_counter)| {
-        //     //     let revmc_toolkit_load::TouchCounter { non_native, overall } = touch_counter;
-        //     //     if result.non_native_exe && non_native != overall {
-        //     //         println!("{}/{} native touches for address {address:?}", overall-non_native, overall);
-        //     //     } else if !result.non_native_exe && non_native != 0 {
-        //     //         println!("{}/{} non-native touches for address {address:?}", non_native, overall);
-        //     //     }
-        //     // });
-        //     // println!("Success: {:?}", result.success);
-        //     // println!("Expected-gas-used: {:?} / Actual-gas-used: {:?}", result.expected_gas_used, result.gas_used);
-        // }
+        Commands::Run(run_args) => {
+            let config = BenchConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected);
+            
+            match run_args {
+                RunArgsCli::Tx { tx_hash, run_type } => {
+                    let tx_hash = B256::from_str(&tx_hash)?;
+                    info!("Running sim for tx: {tx_hash:?}");
+                    runners::run_tx(tx_hash, run_type.parse()?, &config)?;
+                }
+                RunArgsCli::Block { run_type, block_args } => {
+                    let BlockArgsCli { block_num, tob_block_chunk, bob_block_chunk } = block_args;
+                    let block_chunk = tob_block_chunk
+                        .map(|c| BlockPart::TOB(c))
+                        .or(bob_block_chunk.map(|c| BlockPart::BOB(c)));
+                    info!("Running sim for block: {block_num:?}");
+                    runners::run_block(block_num, run_type.parse()?, &config, block_chunk)?;
+                }
+                RunArgsCli::Call { input, run_type } => {
+                    let call_type = SimCall::Fibbonacci;
+                    let input = input.unwrap_or(call_type.default_input());
+                    info!("Running sim for call: {call_type:?} with input: {input:?}");
+                    runners::run_call(
+                        call_type, 
+                        input,
+                        run_type.parse()?,
+                        Some(&config.dir_path)
+                    )?;
+                }
+            }
+        }
         Commands::Bench(bench_args) => {
             let config = BenchConfig::new(
                 dir_path, 
@@ -90,7 +80,7 @@ fn main() -> Result<()> {
                     benches::run_tx_benchmarks(tx_hash, &config)?;
                 }
                 BenchType::Block(block_args) => {
-                    let BenchBlockArgsCli { block_num, tob_block_chunk, bob_block_chunk } = block_args;
+                    let BlockArgsCli { block_num, tob_block_chunk, bob_block_chunk } = block_args;
                     info!("Running bench for block: {:?}", block_num);
                     let block_chunk = tob_block_chunk
                         .map(|c| BlockPart::TOB(c))
@@ -100,7 +90,7 @@ fn main() -> Result<()> {
                 BenchType::Call => {
                     let call_type = SimCall::Fibbonacci; // todo: different call opt
                     info!("Running bench for call: {call_type:?}");
-                    let input = U256::from(100_000).to_be_bytes_vec().into();
+                    let input = call_type.default_input();
                     benches::run_call_benchmarks(SimCall::Fibbonacci, input, &config)?;
                 }
                 BenchType::BlockRange(range_args) => {

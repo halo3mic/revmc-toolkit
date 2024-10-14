@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::ops::AddAssign;
 use eyre::{Ok, Result};
-use std::sync::Arc;
 use tracing::warn;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use reth_db::DatabaseEnv;
