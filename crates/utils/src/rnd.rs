@@ -4,8 +4,21 @@ use rand::SeedableRng;
 use eyre::Result;
 use std::ops::Range;
 
+pub fn random_sequence<T>(start: T, end: T, size: usize, seed: Option<[u8; 32]>) -> Result<Vec<T>> 
+where
+    T: Copy + PartialOrd,
+    Range<T>: Iterator<Item = T>,
+{
+    random_sequence_with_blacklist(start, end, size, seed, vec![])
+}
 
-pub fn random_sequence<T>(start: T, end: T, size: usize, seed: Option<[u8; 32]>) -> Result<Vec<T>>
+pub fn random_sequence_with_blacklist<T>(
+    start: T, 
+    end: T, 
+    size: usize, 
+    seed: Option<[u8; 32]>, 
+    blacklist: Vec<T>
+) -> Result<Vec<T>>
 where
     T: Copy + PartialOrd,
     Range<T>: Iterator<Item = T>,
@@ -16,7 +29,10 @@ where
         ChaCha8Rng::from_entropy()
     };
     
-    let mut sampled_elements: Vec<T> = (start..end).take(size).collect();    
+    let mut sampled_elements: Vec<T> = (start..end)
+        .filter(|e| !blacklist.contains(e))
+        .take(size)
+        .collect();    
     sampled_elements.shuffle(&mut rng);
 
     Ok(sampled_elements)

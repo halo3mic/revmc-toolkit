@@ -306,5 +306,5 @@ pub struct BlockRangeArgs {
     pub measurement_ms: u32,
     pub block_chunk: Option<BlockPart>,
     pub run_rnd_txs: bool,
-    pub seed: Option<[u8;32]>
+    pub seed: Option<[u8;32]>,
 }

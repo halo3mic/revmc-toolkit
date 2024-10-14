@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::ops::AddAssign;
 use eyre::{Ok, Result};
-use tracing::warn;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use reth_db::DatabaseEnv;
 use reth_provider::{
@@ -178,7 +177,7 @@ impl GasGuzzlerResult<Address> {
             if let Some(bytecode) = self.state_provider.account_code(contract)? {
                 bytecode_map.join(bytecode.original_bytes().into(), usage);
             } else {
-                warn!("Code for contract {contract:?} not found")
+                // warn!("Code for account {contract:?} not found") // todo: better solution?
             }
         }
         Ok(GasGuzzlerResult::new(bytecode_map, self.state_provider))

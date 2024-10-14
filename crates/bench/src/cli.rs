@@ -133,6 +133,8 @@ pub struct BlockRangeArgsCli {
     pub rnd_seed: Option<String>,
     #[arg(default_value = "false", long, help = "If present will run single random transaction per block. If block-chunk is set, it will pick the transaction from it.")]
     pub run_rnd_txs: bool,
+    #[arg(long, help = "Comma-separated list of block numbers to blacklist.")]
+    pub blacklist: Option<String>,
 }
 
 use revmc_toolkit_sim::gas_guzzlers::GasGuzzlerConfig;
@@ -161,13 +163,16 @@ impl BlockRangeArgsCli {
 
     fn block_iter(&self) -> Result<Vec<u64>> {
         let (start, end, range_size) = self.start_end_range()?;
+        let blacklist = self.parse_blacklist()?;
         let block_iter = 
             if let Some(sample_size) = self.sample_size {
                 if sample_size > range_size {
                     return Err(eyre::eyre!("Invalid sample size"));
                 }
                 let seed = self.hashed_seed();
-                rnd_utils::random_sequence(start, end, sample_size as usize, seed)?
+                rnd_utils::random_sequence_with_blacklist(
+                    start, end, sample_size as usize, seed, blacklist,
+                )?
             } else {
                 (start..end).collect()
             };
@@ -223,6 +228,19 @@ impl BlockRangeArgsCli {
 
     fn hashed_seed(&self) -> Option<[u8; 32]> {
         self.rnd_seed.as_ref().map(hashed)
+    }
+
+    fn parse_blacklist(&self) -> Result<Vec<u64>> {
+        self.blacklist
+            .as_ref()
+            .map(|blacklist| {
+                blacklist
+                    .split(',')
+                    .map(|num| num.parse::<u64>().map_err(Into::into))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()
+            .map(|blacklist| blacklist.unwrap_or_default())
     }
 
 
