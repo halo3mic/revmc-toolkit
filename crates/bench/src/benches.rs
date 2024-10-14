@@ -49,7 +49,8 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?;
+            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?
+                .with_touch_tracking();
             let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
                 .make_tx_sim(tx_hash)?;
     
@@ -88,7 +89,8 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?;
+            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?
+                .with_touch_tracking();
             let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
                 .make_block_sim(block_num, block_chunk)?;
     
@@ -176,6 +178,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
                         (sim_config.make_block_sim(block_num, args.block_chunk)?, MeasureId::Block(block_num))
                     };
                 
+                info!("Checking validity of txs for block {block_num}");
                 let check_res = bench_utils::check_tx_sim_validity(
                     &provider_factory,
                     &mut sim,
