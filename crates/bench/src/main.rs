@@ -12,8 +12,7 @@ use clap::Parser;
 
 use revmc_toolkit_utils::{evm as evm_utils, build as build_utils};
 use revmc_toolkit_sim::sim_builder::BlockPart;
-use utils::sim::{BytecodeSelection, SimCall};
-use benches::RunConfig;
+use utils::{sim::{BytecodeSelection, SimCall}, bench::RunConfig};
 
 
 fn main() -> Result<()> {

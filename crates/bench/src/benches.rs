@@ -8,25 +8,19 @@ use revm::primitives::{B256, Bytes};
 use reth_provider::{ProviderFactory, BlockReader};
 use reth_db::DatabaseEnv;
 
-use revmc_toolkit_load::EvmCompilerFns;
+use revmc_toolkit_load::{EvmCompilerFns, RevmcExtCtx};
 use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
 use revmc_toolkit_sim::{sim_builder::BlockPart, bytecode_touches};
 use crate::cli::BytecodeSelectionCli;
 use crate::utils::{
     sim::{SimCall, SimConfig, SimRunType, BytecodeSelection, self as sim_utils},
-    bench as bench_utils,
+    bench::{self as bench_utils, RunConfig},
 };
 
 
 // todo: sample_size and measurement_time as args
 // todo: add jit optionally
-// todo: reimplement verification
 
-pub(crate) struct RunConfig<T, U> {
-    pub dir_path: PathBuf,
-    pub reth_db_path: T,
-    pub compile_selection: U,
-}
 
 impl RunConfig<PathBuf, BytecodeSelection> {
     pub fn new(
@@ -55,11 +49,17 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(run_type, bytecodes.clone(), Some(&self.dir_path))?;
+            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?;
             let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
                 .make_tx_sim(tx_hash)?;
     
-            // check_fn_validity(&mut fnc)?;
+            bench_utils::check_tx_sim_validity(
+                &provider_factory,
+                &mut sim,
+                vec![tx_hash],
+                matches!(run_type, SimRunType::Native),
+            )?;
+
             criterion.bench_function(&format!("sim_tx_{symbol}"), |b| {
                 b.iter(|| { sim.run() })
             });
@@ -88,11 +88,17 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(run_type, bytecodes.clone(), Some(&self.dir_path))?;
+            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?;
             let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
                 .make_block_sim(block_num, block_chunk)?;
     
-            // check_fn_validity(&mut fnc)?;
+            bench_utils::check_tx_sim_validity(
+                &provider_factory,
+                &mut sim,
+                txs_for_block(&provider_factory, block_num)?,
+                matches!(run_type, SimRunType::Native),
+            )?;
+
             criterion.bench_function(&format!("sim_block_{symbol}"), |b| {
                 b.iter(|| { sim.run() })
             });
@@ -142,7 +148,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
 
                 let sim_config = SimConfig::new(
                     provider_factory.clone(),
-                    _compiled_fns.into(),
+                    RevmcExtCtx::from(_compiled_fns).with_touch_tracking(),
                 );
 
                 let (mut sim, m_id) = 
@@ -169,7 +175,17 @@ impl RunConfig<PathBuf, BytecodeSelection> {
                     } else {
                         (sim_config.make_block_sim(block_num, args.block_chunk)?, MeasureId::Block(block_num))
                     };
-                // check_fn_validity(&mut fnc)?;
+                
+                let check_res = bench_utils::check_tx_sim_validity(
+                    &provider_factory,
+                    &mut sim,
+                    txs_for_block(&provider_factory, block_num)?,
+                    matches!(run_type, SimRunType::Native),
+                );
+                if let Err(e) = &check_res {
+                    warn!("Check failed for block {block_num} with: {e}");
+                }
+                
                 let exe_time = bench_utils::measure_execution_time(
                     || { sim.run() }, 
                     args.warmup_ms, 
@@ -179,12 +195,15 @@ impl RunConfig<PathBuf, BytecodeSelection> {
                     run_type: symbol.to_string(),
                     id: m_id,
                     exe_time,
+                    err: check_res.err().map(|e| e.to_string()),
                 }))
-            }).collect::<Result<Vec<_>>>()?;
-            // todo: uneccessary collecting + one err can ruin the whole thing
+            }).collect::<Vec<Result<_>>>();
+
             for m in measurements {
-                if let Some(record) = m {
-                    writer.serialize(record)?;
+                match m {
+                    Err(e) => warn!("Error: {e}"),
+                    Ok(None) => continue,
+                    Ok(Some(record)) => writer.serialize(record)?,
                 }
             }
             writer.flush()?;
@@ -274,6 +293,7 @@ struct MeasureRecord {
     id: MeasureId,
     run_type: String,
     exe_time: f64,
+    err: Option<String>,
 }
 
 pub struct BlockRangeArgs {
