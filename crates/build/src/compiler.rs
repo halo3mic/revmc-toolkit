@@ -26,7 +26,7 @@ pub type JitCompileOut = (B256, EvmCompilerFn);
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompilerOptions {
-    pub out_dir: Option<PathBuf>,
+    pub out_dir: PathBuf,
     pub spec_id: SpecId,
 
     pub target_features: Option<String>,
@@ -42,25 +42,7 @@ pub struct CompilerOptions {
     pub label: Option<String>,
 }
 
-impl CompilerOptions {
-    fn new() -> Self {
-        Self {
-            out_dir: None,
-            target: "native".to_string(),
-            target_cpu: None,
-            target_features: None,
-            no_gas: false,
-            no_len_checks: false,
-            frame_pointers: false,
-            debug_assertions: false,
-            no_link: false,
-            opt_level: OptimizationLevelDeseralizable::Aggressive,
-            spec_id: SpecId::CANCUN, // ! EOF yet not implemented
-            label: None,
-        }
-    }
-}
-
+// todo: add the rest setters
 impl CompilerOptions {
     pub fn with_label(mut self, label: impl ToString) -> Self {
         self.label = Some(label.to_string());
@@ -70,7 +52,20 @@ impl CompilerOptions {
 
 impl Default for CompilerOptions {
     fn default() -> Self {
-        Self::new()
+        Self {
+            out_dir: utils::default_dir(),
+            target: "native".to_string(),
+            target_cpu: None,
+            target_features: None,
+            no_gas: false,
+            no_len_checks: false,
+            frame_pointers: false,
+            debug_assertions: false,
+            no_link: false,
+            opt_level: OptimizationLevelDeseralizable::Aggressive,
+            spec_id: SpecId::CANCUN,
+            label: None,
+        }
     }
 }
 
@@ -93,7 +88,7 @@ impl Compiler {
 
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
         let mut compiler = self.create_compiler(ctx, &name, true)?;    
-        compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
+        compiler.translate(&name, bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
         let obj = Self::write_precompiled_obj(&mut compiler, &name, &out_dir)?;
@@ -109,7 +104,7 @@ impl Compiler {
 
     // ! LEAKING MEMORY - only for demo to avoid segmentation fault
     // todo: return a struct that when dropped also drops the context and compiler
-    pub fn compile_jit_many(&self, mut bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
+    pub fn compile_jit_many(&self, bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
         let mut compiler = self.create_compiler(ctx, "compile_many", false)?;
 
@@ -118,7 +113,7 @@ impl Compiler {
             let bytecode_hash = revm::primitives::keccak256(bytecode);
             let name = bytecode_hash.to_string();
             debug!("Compiling JIT contract with name {}", name);
-            let fn_id = compiler.translate(Some(&name), bytecode, self.opt.spec_id)?;
+            let fn_id = compiler.translate(&name, bytecode, self.opt.spec_id)?;
             Ok((bytecode_hash, fn_id))
         }).collect::<Result<Vec<_>>>()?;  
         let fncs = fn_ids.into_iter().map(|(bytecode_hash, fn_id)| {
@@ -137,7 +132,7 @@ impl Compiler {
         )?;
         let mut compiler = EvmCompiler::new(backend);
     
-        compiler.set_dump_to(self.opt.out_dir.clone());
+        compiler.set_dump_to(Some(self.opt.out_dir.clone()));
         compiler.gas_metering(!self.opt.no_gas);
         unsafe { compiler.stack_bound_checks(!self.opt.no_len_checks) };
         compiler.frame_pointers(self.opt.frame_pointers);
@@ -182,16 +177,12 @@ impl Compiler {
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-    
+
         Err(eyre::eyre!("Failed to link object file after 10 attempts"))
     }
 
     fn out_dir(&self, name: &str) -> Result<PathBuf> {
-        let out_dir = match &self.opt.out_dir {
-            Some(dir) => dir,
-            None => &utils::default_dir(),
-        };
-        let out_dir = out_dir.join(name);
+        let out_dir = self.opt.out_dir.join(name);
         utils::make_dir(&out_dir)?;
         Ok(out_dir.to_path_buf())
     }

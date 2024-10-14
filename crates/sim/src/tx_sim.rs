@@ -1,4 +1,5 @@
-use reth_rpc_types::{EthCallBundleResponse, EthCallBundleTransactionResult};
+// use reth_rpc_types::;
+use reth_rpc_types::mev::{EthCallBundleResponse, EthCallBundleTransactionResult};
 use reth_primitives::{transaction::FillTxEnv, TransactionSigned};
 use revm::{
     primitives::{FixedBytes, ResultAndState, U256}, 
@@ -9,12 +10,11 @@ use revm::{
 };
 
 use eyre::{OptionExt, Result};
-use std::sync::Arc;
 
 // modified code from reth's EthBundle::call_bundle
 pub fn sim_txs<'a, EXT, ExtDB: DatabaseRef>(
     transactions: &[TransactionSigned],
-    evm: &mut Evm<'a, EXT, CacheDB<Arc<ExtDB>>>,
+    evm: &mut Evm<'a, EXT, CacheDB<ExtDB>>,
 ) -> Result<EthCallBundleResponse> 
 where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
 {

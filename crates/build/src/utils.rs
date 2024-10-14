@@ -38,3 +38,23 @@ impl Into<revmc::OptimizationLevel> for OptimizationLevelDeseralizable {
         }
     }
 }
+
+impl TryFrom<u8> for OptimizationLevelDeseralizable {
+    type Error = eyre::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(OptimizationLevelDeseralizable::None),
+            1 => Ok(OptimizationLevelDeseralizable::Less),
+            2 => Ok(OptimizationLevelDeseralizable::Default),
+            3 => Ok(OptimizationLevelDeseralizable::Aggressive),
+            _ => Err(eyre::eyre!("Invalid optimization level")),
+        }
+    }
+}
+
+impl Default for OptimizationLevelDeseralizable {
+    fn default() -> Self {
+        OptimizationLevelDeseralizable::Default
+    }
+}

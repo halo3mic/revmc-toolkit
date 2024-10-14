@@ -1,15 +1,12 @@
+use reth_provider::providers::StaticFileProvider;
+pub use reth_provider::ProviderFactory; 
 use reth_chainspec::ChainSpecBuilder;
-use reth_db::{self, DatabaseEnv};
-use reth_provider::{
-    providers::StaticFileProvider,
-    ProviderFactory,
-};
+pub use reth_db::DatabaseEnv;
 use std::path::Path;
 use eyre::Result;
 
 
-pub fn make_provider_factory(db_path: &str) -> Result<ProviderFactory<DatabaseEnv>> {
-    let db_path = Path::new(db_path);
+pub fn make_provider_factory(db_path: &Path) -> Result<ProviderFactory<DatabaseEnv>> {
     let db = reth_db::open_db_read_only(db_path.join("db").as_path(), Default::default())?;
 
     let spec = ChainSpecBuilder::mainnet().build();

@@ -1,15 +1,49 @@
-use revmc_sim_build::{CompilerOptions, CodeWithOptions};
+use revmc_toolkit_build::{CompilerOptions, CodeWithOptions};
 use serde::{Deserialize, Deserializer};
 use reth_provider::StateProvider;
 use revm::primitives::Address;
 use std::iter::IntoIterator;
+use serde_json::Value;
 use revm::primitives::B256;
 use revmc::EvmCompilerFn;
 use std::path::PathBuf;
-use serde_json::Value;
 
 use eyre::{OptionExt, Result};
 
+
+// pub fn compile_aot_from_contracts<P>(
+//     state_provider: &P,
+//     contracts: &[Address],
+//     fallback_opt: Option<CompilerOptions>,
+// ) -> Result<Vec<Result<()>>> 
+//     where
+// {
+//     compile_aot_from_contracts_with_fn(
+//         |account| fetch_code_for_account(state_provider, account),
+//         contracts,
+//         fallback_opt,
+//     )
+// }
+
+pub fn compile_aot_from_contracts_with_fn<F>(
+    account_to_code_fn: F,
+    contracts: &[Address],
+    fallback_opt: Option<CompilerOptions>,
+) -> Result<Vec<Result<()>>> 
+where F: Fn(Address) -> Result<Vec<u8>> {
+    let contracts = contracts.iter().map(|&account| {
+        let code = account_to_code_fn(account)?;
+        Ok(CodeWithOptions { code, options: None })
+    }).collect::<Result<Vec<_>>>()?;
+    revmc_toolkit_build::compile_contracts_aot(contracts, fallback_opt)
+}
+
+fn fetch_code_for_account(state_provider: &impl StateProvider, account: Address) -> Result<Vec<u8>> {
+    let code = state_provider.account_code(account)?
+        .ok_or_eyre("No code found for address")?;
+    let code_bytes = code.original_byte_slice().to_vec();
+    Ok(code_bytes)
+}
 
 pub fn compile_aot_from_codes(
     codes: Vec<Vec<u8>>,
@@ -17,7 +51,7 @@ pub fn compile_aot_from_codes(
 ) -> Result<Vec<Result<()>>>
 {
     let contracts = codes.into_iter().map(|c| c.into()).collect();
-    revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
+    revmc_toolkit_build::compile_contracts_aot(contracts, fallback_opt)
 }
 
 pub fn compile_jit_from_codes(
@@ -25,33 +59,8 @@ pub fn compile_jit_from_codes(
     fallback_opt: Option<CompilerOptions>,
 ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
     let contracts = codes.into_iter().map(|c| c.into()).collect();
-    revmc_sim_build::compile_contracts_jit_par(contracts, fallback_opt)
+    revmc_toolkit_build::compile_contracts_jit_par(contracts, fallback_opt)
 }
-
-// pub fn compile_aot_from_contracts_with_fn<F>(
-//     account_to_code_fn: F,
-//     contracts: &[Address],
-//     fallback_opt: Option<CompilerOptions>,
-// ) -> Result<Vec<Result<()>>> 
-// where F: Fn(Address) -> Result<Vec<u8>> {
-//     let contracts = contracts.iter().map(|&account| {
-//         let code = account_to_code_fn(account)?;
-//         Ok(CodeWithOptions { code, options: None })
-//     }).collect::<Result<Vec<_>>>()?;
-//     revmc_sim_build::compile_contracts_aot(contracts, fallback_opt)
-// }
-
-// pub fn compile_aot_from_contracts(
-//     state_provider: &Box<impl StateProvider + ?Sized>,
-//     contracts: &[Address],
-//     fallback_opt: Option<CompilerOptions>,
-// ) -> Result<Vec<Result<()>>> {
-//     compile_aot_from_contracts_with_fn(
-//         |account| fetch_code_for_account(state_provider, account),
-//         contracts,
-//         fallback_opt,
-//     )
-// }
 
 pub fn compile_aot_from_file_path(
     state_provider: &Box<impl StateProvider + ?Sized>,
@@ -62,30 +71,13 @@ pub fn compile_aot_from_file_path(
     compile_aot_from_build_file(state_provider, build_file)
 }
 
-// pub fn compile_jit_from_file_path(
-//     state_provider: Box<impl StateProvider + ?Sized>,
-//     file_path: &PathBuf,
-// ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
-//     let config_txt = std::fs::read_to_string(file_path)?;
-//     let build_file = serde_json::from_str(&config_txt)?;
-//     compile_jit_from_build_file(state_provider, build_file)
-// }
-
 pub fn compile_aot_from_build_file(
     state_provider: &Box<impl StateProvider + ?Sized>,
     build_file: BuildFile,
 ) -> Result<Vec<Result<()>>> {
     let (contracts, fconfig) = build_file.into_contracts_and_fconfig(state_provider)?;
-    revmc_sim_build::compile_contracts_aot(contracts, fconfig)
+    revmc_toolkit_build::compile_contracts_aot(contracts, fconfig)
 }
-
-// pub fn compile_jit_from_build_file(
-//     state_provider: Box<impl StateProvider + ?Sized>,
-//     build_file: BuildFile,
-// ) -> Result<Vec<Result<(B256, EvmCompilerFn)>>> {
-//     let (contracts, fconfig) = build_file.into_contracts_and_fconfig(&state_provider)?;
-//     revmc_sim_build::compile_contracts_jit(contracts, fconfig)
-// }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BuildObject {
@@ -105,7 +97,7 @@ pub struct BuildFile {
 
 impl BuildFile {
 
-    fn into_contracts_and_fconfig(
+    pub fn into_contracts_and_fconfig(
         self, 
         state_provider: &Box<impl StateProvider + ?Sized>
     ) -> Result<(Vec<CodeWithOptions>,  Option<CompilerOptions>)> {
@@ -127,12 +119,6 @@ impl BuildFile {
 
 }
 
-fn fetch_code_for_account(state_provider: &impl StateProvider, account: Address) -> Result<Vec<u8>> {
-    let code = state_provider.account_code(account)?
-        .ok_or_eyre("No code found for address")?;
-    let code_bytes = code.original_byte_slice().to_vec();
-    Ok(code_bytes)
-}
 
 fn hex_or_vec<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
 where

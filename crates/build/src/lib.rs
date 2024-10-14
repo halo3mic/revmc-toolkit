@@ -7,10 +7,9 @@ use serde_json::Value;
 use rayon::prelude::*;
 use eyre::Result;
 use hex;
-use tracing::debug;
 
 pub use compiler::{CompilerOptions, Compiler, JitCompileOut};
-pub use utils::default_dir;
+pub use utils::{default_dir, OptimizationLevelDeseralizable};
 
 
 // todo: is this still relevant given we have similar functionality in cli? + address field is a problem
@@ -72,6 +71,7 @@ pub fn compile_contracts_jit_par(
         .collect())
 }
 
+// todo: make it possible here to specify the path where the compiled contracts are stored
 pub fn compile_contract_aot(code: &[u8], options: Option<CompilerOptions>) -> Result<()> {
     // todo: does it make sense to load this every time? - instead just do it once? loader struct?
     let compiled_contracts = load_compiled(utils::default_dir()).unwrap_or_default(); 
