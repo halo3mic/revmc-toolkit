@@ -1,6 +1,6 @@
 ## REVMC Toolkit
 
-Tools for building, loading and integrating [revmc](https://github.com/paradigmxyz/revmc) JIT & AOT compiled functions. 
+Tools for building, loading and integrating [revmc](https://github.com/paradigmxyz/revmc) JIT & AOT compiled functions in revm environment. 
 
 Additionally, it provides a way to compare the performance of JIT and AOT compiled functions to native EVM execution.
 
@@ -27,18 +27,18 @@ cargo run --release -p revmc-toolkit-bench run block {block-number} --run-type {
 ### Bench
 #### Bench Fibonacci call
 ```
-cargo run --release -p revmc-toolkit-bench bench call
+RUST_LOG=info cargo run --release -p revmc-toolkit-bench bench call
 ```
 #### Bench Transaction
 ```bash
-cargo run --release -p revmc-toolkit-bench bench tx {tx-hash}
+RUST_LOG=info cargo run --release -p revmc-toolkit-bench bench tx {tx-hash}
 ```
 #### Bench Block
 ```bash
-cargo run --release -p revmc-toolkit-bench bench block {block-number}
+RUST_LOG=info cargo run --release -p revmc-toolkit-bench bench block {block-number}
 ```
 #### Bench Block Range
 ```bash 
-cargo run --release -p revmc-toolkit-bench block-range {start-block}..{end-block} --sample-size {sample-size}
+RUST_LOG=info cargo run --release -p revmc-toolkit-bench block-range {start-block}..{end-block} --sample-size {sample-size}
 ```
 The results will be recorded in a file. See `--help` for more options.
