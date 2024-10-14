@@ -42,7 +42,6 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             is_native_exe, 
         )?;
 
-        println!("TxHash: {tx_hash:?} ran successfully");
         println!("Elapsed: {:?}", elapsed);
 
         Ok(())
@@ -90,7 +89,6 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             is_native_exe, 
         )?;
 
-        println!("Block: {block_num:?} ran successfully");
         println!("Elapsed: {:?}", elapsed);
 
         Ok(())
@@ -120,7 +118,6 @@ impl<T, U> RunConfig<T, U> {
             .make_call_sim(call, call_input.clone())?;
         let (_result, elapsed) = bench_utils::time_fn(|| sim.run())?;
 
-        println!("CallType: {call:?} ran successfully");
         println!("Elapsed: {:?}", elapsed);
 
         Ok(())
