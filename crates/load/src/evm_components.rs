@@ -10,9 +10,6 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use revm::primitives::Address;
 
-
-// todo: rename as it is not only aot
-
 #[derive(Default, Clone, Debug)]
 pub struct EvmCompilerFns(pub Arc<FxHashMap<B256, (EvmCompilerFn, ReferenceDropObject)>>);
 
