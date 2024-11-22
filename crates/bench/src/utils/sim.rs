@@ -142,8 +142,7 @@ impl BytecodeSelection {
             BytecodeSelection::GasGuzzlers { config, size_limit }  => {
                 tracing::info!("Finding gas guzzlers");
                 config.find_gas_guzzlers(provider_factory)?
-                    .contract_to_bytecode()?
-                    .into_top_guzzlers(*size_limit)
+                    .into_top_guzzlers(Some(*size_limit))
             }
         })
     }

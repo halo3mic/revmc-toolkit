@@ -116,11 +116,11 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
         let mut writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
 
-        let bytecode = 
+        let bytecodes = 
             if let BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } = &self.compile_selection {
-                Some(gconfig.find_gas_guzzlers(provider_factory.clone())?
-                    .contract_to_bytecode()?
-                    .into_top_guzzlers(*size_limit))
+                Some(gconfig
+                    .find_gas_guzzlers(provider_factory.clone())?
+                    .into_top_guzzlers(Some(*size_limit)))
             } else {
                 None
             };
@@ -132,14 +132,14 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             ("aot", SimRunType::AOTCompiled),
             // ("jit", SimRunType::JITCompiled),
         ] {
-            if let Some(bytecode) = bytecode.as_ref() {
-                compiled_fns_inner = sim_utils::make_compiled_fns(run_type.clone(), bytecode.clone(), Some(&self.dir_path))?;
+            if let Some(bytecodes) = bytecodes.as_ref() {
+                compiled_fns_inner = sim_utils::make_compiled_fns(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?;
             }
             let measurements = block_iter.clone().into_par_iter().map(|block_num| {
                 info!("Running {} for block {block_num}", symbol.to_uppercase());
 
                 let _compiled_fns = 
-                    if bytecode.is_none() {
+                    if bytecodes.is_none() {
                         let txs = txs_for_block(&provider_factory, block_num)?;
                         let bytecodes = bytecode_touches::find_touched_bytecode(provider_factory.clone(), txs)?
                             .into_iter().collect();
