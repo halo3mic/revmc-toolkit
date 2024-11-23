@@ -40,7 +40,6 @@ where
     let start = Instant::now();
     let res = fnc()?;
     let elapsed = start.elapsed();
-    println!("Elapsed: {:?}", elapsed);
     Ok((res, elapsed))
 }
 
@@ -115,7 +114,7 @@ pub fn check_tx_sim_validity(
         }
         if !native_exe && (touch_counter.non_native != touch_counter.overall) {
             let ratio = touch_counter.non_native as f32 / touch_counter.overall as f32;
-            warn!("invalid touch count for {account:?}: expected all non-native, found {:.2?}%", ratio*100.);
+            // warn!("invalid touch count for {account:?}: expected all non-native, found {:.2?}%", ratio*100.);
         }
     }
 

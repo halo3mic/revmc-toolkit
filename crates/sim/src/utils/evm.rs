@@ -11,7 +11,7 @@ use revm::{
 };
 use reth_evm_ethereum::EthEvmConfig;
 use reth_evm::ConfigureEvmEnv;
-use reth_primitives::Block;
+use reth_primitives::Header;
 
 
 pub(crate) fn make_evm<'a, ExtCtx, DBInner: Database + DatabaseRef>(
@@ -32,9 +32,9 @@ pub(crate) fn make_evm<'a, ExtCtx, DBInner: Database + DatabaseRef>(
     }
 }
 
-pub(crate) fn env_with_handler_cfg(chain_id: u64, block: &Block) -> EnvWithHandlerCfg {
-    let mut block_env = block_env_from_block(block);
-    block_env.prevrandao = Some(block.header.mix_hash);
+pub(crate) fn env_with_handler_cfg(chain_id: u64, block_header: &Header) -> EnvWithHandlerCfg {
+    let mut block_env = block_env_from_block(block_header);
+    block_env.prevrandao = Some(block_header.mix_hash);
     let cfg = CfgEnv::default().with_chain_id(chain_id);
     let cfg_env = CfgEnvWithHandlerCfg::new_with_spec_id(cfg, SpecId::CANCUN);
     let env = EnvWithHandlerCfg::new_with_cfg_env(cfg_env, block_env, TxEnv::default());
@@ -42,13 +42,13 @@ pub(crate) fn env_with_handler_cfg(chain_id: u64, block: &Block) -> EnvWithHandl
 }
 
 // todo: Fill block env in simpler way with less imports
-pub(crate) fn block_env_from_block(block: &Block) -> BlockEnv {
+pub(crate) fn block_env_from_block(block_header: &Header) -> BlockEnv {
     let mut block_env = BlockEnv::default();
     let eth_evm_cfg = EthEvmConfig::default();
     eth_evm_cfg.fill_block_env(
         &mut block_env,
-        &block.header,
-        block.header.number >= 15537393,
+        &block_header,
+        block_header.number >= 15537393,
     );
     block_env
 }

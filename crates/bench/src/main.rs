@@ -70,7 +70,7 @@ fn main() -> Result<()> {
             let mut config = RunConfig::new(
                 dir_path, 
                 reth_db_path, 
-                BytecodeSelection::Selected // todo: add opt for gas guzzlers
+                BytecodeSelection::Selected
             );
             
             match bench_args {

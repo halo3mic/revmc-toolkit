@@ -3775,6 +3775,7 @@ dependencies = [
  "libloading",
  "revm",
  "revmc",
+ "revmc-toolkit-build",
  "rustc-hash 2.0.0",
  "tracing",
 ]

@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.79"
 
 [dependencies]
+revmc-toolkit-build.workspace = true
 revmc.workspace = true
 revm.workspace = true
 eyre.workspace = true

@@ -10,7 +10,7 @@ use reth_provider::{
     StateProvider, ProviderFactory, BlockReader, 
     ChainSpecProvider, TransactionsProvider,
 };
-use reth_primitives::{Block, TransactionSigned, TransactionMeta};
+use reth_primitives::{Header, Block, TransactionSigned, TransactionMeta};
 use reth_revm::database::StateProviderDatabase;
 use reth_rpc_types::mev::EthCallBundleResponse;
 use reth_db::DatabaseEnv;
@@ -75,8 +75,8 @@ pub trait TxsSimBuilderExt<ExtCtx, S> {
     ) -> Result<S>;
     fn make_txs_sim(
         self, 
-        block: &Block,
-        tx_hashes: Vec<TransactionSigned>, // todo could just take incidces instaed
+        block: &Header,
+        txs: Vec<TransactionSigned>, // todo could just take incidces instaed
         pre_execution_txs: Vec<TransactionSigned>,
     ) -> Result<S>;
 
@@ -99,9 +99,9 @@ pub trait TxsSimBuilderExt<ExtCtx, S> {
         Ok(CacheDB::new(StateProviderDatabase::new(state_provider)))
     }
 
-    fn make_env(&self, block: &Block) -> EnvWithHandlerCfg {
+    fn make_env(&self, block_header: &Header) -> EnvWithHandlerCfg {
         let chain_id = self.provider_factory().chain_spec().chain.id();
-        utils::evm::env_with_handler_cfg(chain_id, block)
+        utils::evm::env_with_handler_cfg(chain_id, block_header)
     }
 
     fn get_block(&self, block_number: u64) -> Result<Block> {
@@ -125,9 +125,9 @@ for SimulationBuilder<ProviderFactory<DatabaseEnv>, ExtCtx, StateProviderCacheDB
     
     fn into_tx_sim(self, tx_hash: B256) -> Result<Self::SimType> {
         let (tx, meta) = self.get_tx_with_meta(tx_hash)?;
-        let block = self.get_block(meta.block_number.into())?;
-        let pre_execution_txs = block.body[..(meta.index as usize)].to_vec();
-        self.make_txs_sim(&block, vec![tx], pre_execution_txs)
+        let Block { body, header, .. } = self.get_block(meta.block_number.into())?;
+        let pre_execution_txs = body[..(meta.index as usize)].to_vec();
+        self.make_txs_sim(&header, vec![tx], pre_execution_txs)
     }
 
     fn into_block_sim(
@@ -135,23 +135,22 @@ for SimulationBuilder<ProviderFactory<DatabaseEnv>, ExtCtx, StateProviderCacheDB
         block_number: u64, 
         block_chunk: Option<BlockPart>
     ) -> Result<Self::SimType> {
-        let block = self.get_block(block_number)?;
-        let txs = block.body.clone();
+        let Block { body, header, .. } = self.get_block(block_number)?;
         let (txs, pre_execution) = match block_chunk {
-            Some(chunk) => chunk.split_txs(txs),
-            None => (txs, vec![]),
+            Some(chunk) => chunk.split_txs(body),
+            None => (body, vec![]),
         };
-        self.make_txs_sim(&block, txs, pre_execution)
+        self.make_txs_sim(&header, txs, pre_execution)
     }
 
     fn make_txs_sim(
         mut self, 
-        block: &Block,
-        tx_hashes: Vec<TransactionSigned>, // todo could just take incidces instaed
+        block_header: &Header,
+        tx_hashes: Vec<TransactionSigned>,
         pre_execution_txs: Vec<TransactionSigned>,
     ) -> Result<Self::SimType> {
-        let db = self.make_db_at_block(block.number)?;
-        let env = self.make_env(block);
+        let db = self.make_db_at_block(block_header.number)?;
+        let env = self.make_env(block_header);
         let evm = utils::evm::make_evm(
             db, 
             self.ext_ctx.take()
@@ -161,7 +160,7 @@ for SimulationBuilder<ProviderFactory<DatabaseEnv>, ExtCtx, StateProviderCacheDB
         );
 
         let execute_fn = Box::new(move |evm: &mut SimEvm<ExtCtx>| {
-            tx_sim::sim_txs(&tx_hashes.clone(), evm)
+            tx_sim::sim_txs(&tx_hashes, evm)
                 .map(|r| r.into_sim_results())
         });
         let preexecute_fn = Box::new(|evm: &mut SimEvm<ExtCtx>| {

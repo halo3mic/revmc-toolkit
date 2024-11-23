@@ -17,9 +17,9 @@ use crate::utils::{
     bench::{self as bench_utils, RunConfig},
 };
 
-
 // todo: sample_size and measurement_time as args
 // todo: add jit optionally
+
 
 
 impl RunConfig<PathBuf, BytecodeSelection> {
@@ -43,13 +43,13 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         let bytecodes = self.compile_selection.bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
     
         for (symbol, run_type) in [
+            ("jit", SimRunType::JITCompiled),
             ("aot", SimRunType::AOTCompiled),
             ("native", SimRunType::Native),
-            // ("jit", SimRunType::JITCompiled),
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?
+            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), &bytecodes, Some(&self.dir_path))?
                 .with_touch_tracking();
             let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
                 .make_tx_sim(tx_hash)?;
@@ -84,12 +84,12 @@ impl RunConfig<PathBuf, BytecodeSelection> {
     
         for (symbol, run_type) in [
             ("native", SimRunType::Native),
-            // ("jit", SimRunType::JITCompiled),
+            ("jit", SimRunType::JITCompiled),
             ("aot", SimRunType::AOTCompiled),
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?
+            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), &bytecodes, Some(&self.dir_path))?
                 .with_touch_tracking();
             let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
                 .make_block_sim(block_num, block_chunk)?;
@@ -133,7 +133,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             // ("jit", SimRunType::JITCompiled),
         ] {
             if let Some(bytecodes) = bytecodes.as_ref() {
-                compiled_fns_inner = sim_utils::make_compiled_fns(run_type.clone(), bytecodes.clone(), Some(&self.dir_path))?;
+                compiled_fns_inner = sim_utils::make_compiled_fns(run_type.clone(), &bytecodes, Some(&self.dir_path))?;
             }
             let measurements = block_iter.clone().into_par_iter().map(|block_num| {
                 info!("Running {} for block {block_num}", symbol.to_uppercase());
@@ -142,8 +142,8 @@ impl RunConfig<PathBuf, BytecodeSelection> {
                     if bytecodes.is_none() {
                         let txs = txs_for_block(&provider_factory, block_num)?;
                         let bytecodes = bytecode_touches::find_touched_bytecode(provider_factory.clone(), txs)?
-                            .into_iter().collect();
-                        sim_utils::make_compiled_fns(run_type.clone(), bytecodes, Some(&self.dir_path))?
+                            .into_iter().collect::<Vec<_>>();
+                        sim_utils::make_compiled_fns(run_type.clone(), &bytecodes, Some(&self.dir_path))?
                     } else {
                         compiled_fns_inner.clone()
                     };
@@ -238,10 +238,10 @@ impl<T, U> RunConfig<T, U> {
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let bytecode = call.bytecode().original_bytes().into();
+            let bytecode: Vec<_> = call.bytecode().original_bytes().into();
             let ext_ctx = sim_utils::make_ext_ctx(
                 run_type, 
-                vec![bytecode], 
+                &[bytecode], 
                 Some(&self.dir_path)
             )?;
             let mut sim = SimConfig::from(ext_ctx)

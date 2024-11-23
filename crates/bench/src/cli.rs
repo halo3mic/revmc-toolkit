@@ -87,7 +87,7 @@ pub struct GasGuzzlersCli {
 
 #[derive(Args, Debug)]
 pub struct BuildArgsCli {
-    // todo
+    pub path: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]

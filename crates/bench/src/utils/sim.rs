@@ -10,7 +10,8 @@ use revmc_toolkit_sim::sim_builder::{
     StateProviderCacheDB, TxsSimBuilderExt,
 };
 use revmc_toolkit_load::{EvmCompilerFnLoader, RevmcExtCtx, EvmCompilerFns, revmc_register_handler};
-use revmc_toolkit_utils::build as build_utils;
+use revmc_toolkit_sim::{gas_guzzlers::GasGuzzlerConfig, bytecode_touches};
+use revmc_toolkit_utils::build::{self as build_utils, CompilerOptions};
 
 pub struct SimConfig<P> {
     ext_ctx: RevmcExtCtx, 
@@ -83,29 +84,28 @@ impl FromStr for SimRunType {
 
 pub fn make_ext_ctx(
     run_type: SimRunType, 
-    bytecode: Vec<Vec<u8>>, 
+    bytecodes: &[Vec<u8>], 
     aot_dir: Option<&PathBuf>,
 ) -> Result<RevmcExtCtx> {
-    make_compiled_fns(run_type, bytecode, aot_dir)
+    make_compiled_fns(run_type, bytecodes, aot_dir)
         .map(Into::into)
 }
 
 pub fn make_compiled_fns(
     run_type: SimRunType, 
-    bytecode: Vec<Vec<u8>>, 
+    bytecodes: &[Vec<u8>], 
     aot_dir: Option<&PathBuf>,
 ) -> Result<EvmCompilerFns> {
     Ok(match run_type {
         SimRunType::Native => EvmCompilerFns::default(),
         SimRunType::JITCompiled => {
-            build_utils::compile_jit_from_codes(bytecode, None)?
-                .into_iter()
-                .collect::<Result<Vec<_>>>()?
+            build_utils::compile_jit_from_codes(bytecodes, None)?
                 .into()
         }
         SimRunType::AOTCompiled => {
-            let bytecode_hashes = bytecode.iter().map(|code| keccak256(&code)).collect();
-            build_utils::compile_aot_from_codes(bytecode, None)?
+            let bytecode_hashes = bytecodes.iter().map(|code| keccak256(&code)).collect();
+            let comp_opt = aot_dir.map(|d| CompilerOptions::default().with_out_dir(d));
+            build_utils::compile_aot_from_codes(bytecodes, comp_opt)?
                 .into_iter()
                 .collect::<Result<Vec<_>>>()?;
             let aot_dir = aot_dir.ok_or_else(|| eyre::eyre!("AOT dir not provided"))?;
@@ -115,8 +115,6 @@ pub fn make_compiled_fns(
         }
     })
 }
-
-use revmc_toolkit_sim::{gas_guzzlers::GasGuzzlerConfig, bytecode_touches};
 
 pub enum BytecodeSelection {
     Selected, 
