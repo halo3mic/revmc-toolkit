@@ -1,8 +1,8 @@
 use revmc::{
     llvm::inkwell::context::Context,
     EvmLlvmBackend, 
-    EvmCompiler,
     EvmCompilerFn,
+    EvmCompiler,
 };
 use revm::primitives::{SpecId, B256};
 
@@ -14,7 +14,49 @@ use tracing::debug;
 use crate::utils::{self, OptimizationLevelDeseralizable};
 
 
-pub type JitCompileOut = (B256, EvmCompilerFn);
+#[derive(Default)]
+pub struct JitCompileOut {
+    pub entries: Vec<(B256, EvmCompilerFn)>,
+    pub ctx: JitCompileCtx,
+}
+
+impl JitCompileOut {
+    pub fn merge(&mut self, other: Self) {
+        self.entries.extend(other.entries);
+        self.ctx.0.extend(other.ctx.0);
+    }
+}
+
+#[derive(Default)]
+pub struct JitCompileCtx(
+    Vec<PtrWrapper<EvmCompiler<EvmLlvmBackend<'static>>, PtrWrapper<Context>>>
+);
+
+#[derive(Debug)]
+pub struct PtrWrapper<T, D = ()> {
+    x: *const T,
+    dep: Option<D>,
+}
+impl<T, D> PtrWrapper<T, D> {
+    pub fn new_with_dep(x: *const T, dep: D) -> Self {
+        Self { x, dep: Some(dep) }
+    }
+}
+impl<T> PtrWrapper<T, ()> {
+    pub fn new(x: *const T) -> Self {
+        Self { x, dep: None }
+    }
+}
+impl<T, D> Drop for PtrWrapper<T, D> {
+    fn drop(&mut self) {
+        unsafe { let _ = Box::from_raw(self.x as *mut T); }
+        if let Some(dep) = self.dep.take() {
+            drop(dep);
+        }
+    }
+}
+unsafe impl<T, D> Sync for PtrWrapper<T, D> {}
+unsafe impl<T, D> Send for PtrWrapper<T, D> {}
 
 /**
  * Performance considerations:
@@ -39,13 +81,12 @@ pub struct CompilerOptions {
     pub no_len_checks: bool,
     pub frame_pointers: bool,
     pub debug_assertions: bool,
-    pub label: Option<String>,
 }
 
 // todo: add the rest setters
 impl CompilerOptions {
-    pub fn with_label(mut self, label: impl ToString) -> Self {
-        self.label = Some(label.to_string());
+    pub fn with_out_dir(mut self, out_dir: impl Into<PathBuf>) -> Self {
+        self.out_dir = out_dir.into();
         self
     }
 }
@@ -62,9 +103,8 @@ impl Default for CompilerOptions {
             frame_pointers: false,
             debug_assertions: false,
             no_link: false,
-            opt_level: OptimizationLevelDeseralizable::Aggressive,
+            opt_level: OptimizationLevelDeseralizable::Default,
             spec_id: SpecId::CANCUN,
-            label: None,
         }
     }
 }
@@ -86,8 +126,8 @@ impl Compiler {
         let name = utils::bytecode_hash_str(bytecode);
         debug!("Compiling AOT contract with name {}", name);  
 
-        let ctx: &'static Context = Box::leak(Box::new(Context::create()));
-        let mut compiler = self.create_compiler(ctx, &name, true)?;    
+        let ctx = Context::create();
+        let mut compiler = self.create_compiler(&ctx, &name, true)?;    
         compiler.translate(&name, bytecode, self.opt.spec_id)?;
 
         let out_dir = self.out_dir(&name)?;
@@ -99,33 +139,37 @@ impl Compiler {
     }
 
     pub fn compile_jit(&self, bytecode: &[u8]) -> Result<JitCompileOut> {
-        self.compile_jit_many(vec![bytecode]).map(|mut v| v.pop().unwrap())
+        self.compile_jit_many(&[bytecode])
     }
 
-    // ! LEAKING MEMORY - only for demo to avoid segmentation fault
-    // todo: return a struct that when dropped also drops the context and compiler
-    pub fn compile_jit_many(&self, bytecodes: Vec<&[u8]>) -> Result<Vec<JitCompileOut>> {
+    pub fn compile_jit_many(&self, bytecodes: &[impl AsRef<[u8]>]) -> Result<JitCompileOut> {
         let ctx: &'static Context = Box::leak(Box::new(Context::create()));
-        let mut compiler = self.create_compiler(ctx, "compile_many", false)?;
+        let mut compiler = self.create_compiler(&ctx, "compile_many", false)?;
 
         // First we translate all at once, only then we finalize them
-        let fn_ids = bytecodes.into_iter().map(|bytecode| {
+        let fn_ids = bytecodes.iter().map(|bytecode| {
             let bytecode_hash = revm::primitives::keccak256(bytecode);
             let name = bytecode_hash.to_string();
             debug!("Compiling JIT contract with name {}", name);
-            let fn_id = compiler.translate(&name, bytecode, self.opt.spec_id)?;
+            let fn_id = compiler.translate(&name, bytecode.as_ref(), self.opt.spec_id)?;
             Ok((bytecode_hash, fn_id))
         }).collect::<Result<Vec<_>>>()?;  
         let fncs = fn_ids.into_iter().map(|(bytecode_hash, fn_id)| {
             let fnc = unsafe { compiler.jit_function(fn_id)? };
             Ok((bytecode_hash, fnc))
         }).collect::<Result<Vec<_>>>()?;
-        Box::leak(Box::new(compiler));
 
-        Ok(fncs)
+        let cmp_ptr_wrapper = PtrWrapper::new_with_dep(
+            Box::leak(Box::new(compiler)), 
+            PtrWrapper::new(ctx)
+        );
+        Ok(JitCompileOut {
+            ctx: JitCompileCtx(vec![cmp_ptr_wrapper]),
+            entries: fncs,
+        })
     }
     
-    fn create_compiler(&self, ctx: &'static Context, name: &str, aot: bool) -> Result<EvmCompiler<EvmLlvmBackend<'static>>> {
+    fn create_compiler<'a>(&self, ctx: &'a Context, name: &str, aot: bool) -> Result<EvmCompiler<EvmLlvmBackend<'a>>> {
         let target = self.create_target();
         let backend = EvmLlvmBackend::new_for_target(
             ctx, aot, self.opt.opt_level.clone().into(), &target

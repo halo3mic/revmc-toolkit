@@ -9,8 +9,9 @@ pub use revmc::EvmCompilerFn;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use revm::primitives::Address;
+use revmc_toolkit_build::{JitCompileOut, JitCompileCtx};
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone)]
 pub struct EvmCompilerFns(pub Arc<FxHashMap<B256, (EvmCompilerFn, ReferenceDropObject)>>);
 
 impl EvmCompilerFns {
@@ -32,6 +33,16 @@ impl From<Vec<(B256, (EvmCompilerFn, Library))>> for EvmCompilerFns {
     fn from(fns: Vec<(B256, (EvmCompilerFn, Library))>) -> Self {
         let compiled_fns = fns.into_iter()
             .map(|(h, (fnc, lib))| (h, (fnc, ReferenceDropObject::Library(lib))))
+            .collect();
+        Self(Arc::new(compiled_fns))
+    }
+}
+
+impl From<JitCompileOut> for EvmCompilerFns {
+    fn from(JitCompileOut { entries, ctx }: JitCompileOut) -> Self {
+        let compiler_ctx = Arc::new(ctx);
+        let compiled_fns = entries.into_iter()
+            .map(|(h, fnc)| (h, (fnc, ReferenceDropObject::CompilerCtx(compiler_ctx.clone()))))
             .collect();
         Self(Arc::new(compiled_fns))
     }
@@ -88,10 +99,10 @@ impl RevmcExtCtxExtTrait for RevmcExtCtx {
     }
 }
 
-#[derive(Debug)]
 pub enum ReferenceDropObject {
     #[allow(dead_code)]
     Library(Library),
+    CompilerCtx(Arc<JitCompileCtx>),
     None,
 }
 
