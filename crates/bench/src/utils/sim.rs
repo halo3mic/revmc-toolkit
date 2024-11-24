@@ -83,7 +83,7 @@ impl FromStr for SimRunType {
 }
 
 pub fn make_ext_ctx(
-    run_type: SimRunType, 
+    run_type: &SimRunType, 
     bytecodes: &[Vec<u8>], 
     aot_dir: Option<&PathBuf>,
 ) -> Result<RevmcExtCtx> {
@@ -92,7 +92,7 @@ pub fn make_ext_ctx(
 }
 
 pub fn make_compiled_fns(
-    run_type: SimRunType, 
+    run_type: &SimRunType, 
     bytecodes: &[Vec<u8>], 
     aot_dir: Option<&PathBuf>,
 ) -> Result<EvmCompilerFns> {

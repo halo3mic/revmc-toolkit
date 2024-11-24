@@ -44,7 +44,7 @@ where
 }
 
 pub(crate) struct RunConfig<T, U> {
-    pub dir_path: PathBuf,
+    pub aot_dir_path: PathBuf,
     pub reth_db_path: T,
     pub compile_selection: U,
 }
@@ -113,7 +113,8 @@ pub fn check_tx_sim_validity(
             warn!("invalid touch count for {account:?}: expected all native, found {:.2?}%", ratio*100.);
         }
         if !native_exe && (touch_counter.non_native != touch_counter.overall) {
-            let ratio = touch_counter.non_native as f32 / touch_counter.overall as f32;
+            let _ratio = touch_counter.non_native as f32 / touch_counter.overall as f32;
+            // todo: will always be wrong for gas guzzlers
             // warn!("invalid touch count for {account:?}: expected all non-native, found {:.2?}%", ratio*100.);
         }
     }
@@ -129,6 +130,7 @@ pub fn check_tx_sim_validity(
     }
     if !native_exe && (non_native != overall) {
         let ratio = non_native as f32 / overall as f32;
+        // todo: will always be wrong for gas guzzlers
         let msg = format!("invalid touch count: expected all non-native, found {:.2?}%", ratio*100.);
         if non_native > 0 {
             warn!("{msg}");

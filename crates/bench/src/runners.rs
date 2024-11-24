@@ -23,7 +23,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             match &run_type {
                 SimRunType::AOTCompiled | SimRunType::JITCompiled => {
                     let bytecodes = self.compile_selection.bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
-                    let ctx = sim_utils::make_ext_ctx(run_type, &bytecodes, Some(&self.dir_path))?
+                    let ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(&self.aot_dir_path))?
                         .with_touch_tracking();
                     (ctx, false)
                 }
@@ -71,7 +71,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             match run_type {
                 SimRunType::AOTCompiled | SimRunType::JITCompiled => {
                     let bytecodes = self.compile_selection.bytecodes(provider_factory.clone(), Some(block_txs.clone()))?;
-                    sim_utils::make_ext_ctx(run_type, &bytecodes, Some(&self.dir_path))?
+                    sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(&self.aot_dir_path))?
                         .with_touch_tracking()
                 }
                 SimRunType::Native => RevmcExtCtx::default()
@@ -110,9 +110,9 @@ impl<T, U> RunConfig<T, U> {
         let bytecode: Vec<u8> = call.bytecode().original_bytes().into();
         println!("Bytecode: {}", hex::encode(&bytecode));
         let ext_ctx = sim_utils::make_ext_ctx(
-            run_type, 
+            &run_type, 
             &[bytecode], 
-            Some(&self.dir_path),
+            Some(&self.aot_dir_path),
         )?;
         let mut sim = SimConfig::from(ext_ctx)
             .make_call_sim(call, call_input.clone())?;

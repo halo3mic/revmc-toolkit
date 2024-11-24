@@ -4,13 +4,13 @@ use criterion::Criterion;
 use eyre::{OptionExt, Result};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
-use revm::primitives::{B256, Bytes};
+use revm::primitives::{Bytes, B256};
 use reth_provider::{ProviderFactory, BlockReader};
 use reth_db::DatabaseEnv;
 
 use revmc_toolkit_load::{EvmCompilerFns, RevmcExtCtx};
 use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
-use revmc_toolkit_sim::{sim_builder::BlockPart, bytecode_touches};
+use revmc_toolkit_sim::{sim_builder::{BlockPart, Simulation, StateProviderCacheDB}, bytecode_touches};
 use crate::cli::BytecodeSelectionCli;
 use crate::utils::{
     sim::{SimCall, SimConfig, SimRunType, BytecodeSelection, self as sim_utils},
@@ -20,203 +20,102 @@ use crate::utils::{
 // todo: sample_size and measurement_time as args
 // todo: add jit optionally
 
-
-
 impl RunConfig<PathBuf, BytecodeSelection> {
     pub fn new(
-        dir_path: PathBuf, 
+        aot_dir_path: PathBuf, 
         reth_db_path: PathBuf, 
         compile_selection: BytecodeSelection
     ) -> Self {
-        Self { dir_path, reth_db_path, compile_selection }
+        Self { aot_dir_path, reth_db_path, compile_selection }
     }
 
     pub fn bench_tx(&self, tx_hash: B256) -> Result<()> {
         let span = span!(Level::INFO, "bench_tx");
         let _guard = span.enter();
         info!("TxHash: {:?}", tx_hash);
-        let mut criterion = Criterion::default()
-            .sample_size(100)
-            .measurement_time(Duration::from_secs(5));
-    
-        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;    
-        let bytecodes = self.compile_selection.bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
-    
-        for (symbol, run_type) in [
-            ("jit", SimRunType::JITCompiled),
-            ("aot", SimRunType::AOTCompiled),
-            ("native", SimRunType::Native),
-        ] {
-            info!("Running {}", symbol.to_uppercase());
-    
-            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), &bytecodes, Some(&self.dir_path))?
-                .with_touch_tracking();
-            let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
-                .make_tx_sim(tx_hash)?;
-    
-            bench_utils::check_tx_sim_validity(
-                &provider_factory,
-                &mut sim,
-                vec![tx_hash],
-                matches!(run_type, SimRunType::Native),
-            )?;
 
-            criterion.bench_function(&format!("sim_tx_{symbol}"), |b| {
-                b.iter(|| { sim.run() })
-            });
-        }
-        Ok(())
+        self.bench_variant(
+            |_provider_factory: &ProviderFactory<DatabaseEnv>| {
+                Ok(vec![tx_hash])
+            },
+            |sim_config: SimConfig<ProviderFactory<DatabaseEnv>>| {
+                sim_config.make_tx_sim(tx_hash)
+            },
+        )
     }
-    
+
     pub fn bench_block(&self, block_num: u64, block_chunk: Option<BlockPart>) -> Result<()> {
         let span = span!(Level::INFO, "bench_block");
         let _guard = span.enter();
         info!("Block: {:?}", block_num);
+
+        self.bench_variant(
+            |provider_factory: &ProviderFactory<DatabaseEnv>| {
+                txs_for_block(provider_factory, block_num)
+            }, 
+            |sim_config: SimConfig<ProviderFactory<DatabaseEnv>>| {
+                sim_config.make_block_sim(block_num, block_chunk)
+            },
+        )
+    }
+
+    pub fn bench_block_range(&self, args: BlockRangeArgs) -> Result<()> {
+        let span = span!(Level::INFO, "bench_block_range");
+        let _guard = span.enter();
+        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
+
+        BlockRangeRunner::new(
+            args,
+            provider_factory,
+            self.aot_dir_path.clone(),
+            &self.compile_selection
+        )?.run()
+    }
+
+    pub fn bench_variant<FTx, FSim>(
+        &self,
+        build_txs_fn: FTx,
+        build_sim_fn: FSim,
+    ) -> Result<()> 
+    where
+        FSim: Fn(SimConfig<ProviderFactory<DatabaseEnv>>) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>>,
+        FTx: Fn(&ProviderFactory<DatabaseEnv>) -> Result<Vec<B256>>,
+    {
+        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
+        let txs = build_txs_fn(&provider_factory)?;
+        let bytecodes = self.compile_selection.bytecodes(
+            provider_factory.clone(),
+            Some(txs.clone())
+        )?;
+
         let mut criterion = Criterion::default()
             .sample_size(100)
             .measurement_time(Duration::from_secs(5));
-    
-        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
-        let bytecodes = self.compile_selection.bytecodes(
-            provider_factory.clone(),
-            Some(txs_for_block(&provider_factory, block_num)?)
-        )?;
-    
         for (symbol, run_type) in [
             ("native", SimRunType::Native),
-            ("jit", SimRunType::JITCompiled),
+            // ("jit", SimRunType::JITCompiled),
             ("aot", SimRunType::AOTCompiled),
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(run_type.clone(), &bytecodes, Some(&self.dir_path))?
+            let ext_ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(&self.aot_dir_path))?
                 .with_touch_tracking();
-            let mut sim = SimConfig::new(provider_factory.clone(), ext_ctx)
-                .make_block_sim(block_num, block_chunk)?;
+            let sim_config = SimConfig::new(provider_factory.clone(), ext_ctx);
+            let mut sim = build_sim_fn(sim_config)?;
     
             bench_utils::check_tx_sim_validity(
                 &provider_factory,
                 &mut sim,
-                txs_for_block(&provider_factory, block_num)?,
+                txs.clone(),
                 matches!(run_type, SimRunType::Native),
             )?;
 
-            criterion.bench_function(&format!("sim_block_{symbol}"), |b| {
+            criterion.bench_function(&format!("sim_{symbol}"), |b| {
                 b.iter(|| { sim.run() })
             });
         }
         Ok(())
     }
-
-    // todo: improve
-    pub fn bench_block_range(&self, args: BlockRangeArgs) -> Result<()> {
-        let span = span!(Level::INFO, "bench_block_range");
-        let _guard = span.enter();
-
-        let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
-        let mut writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
-
-        let bytecodes = 
-            if let BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } = &self.compile_selection {
-                Some(gconfig
-                    .find_gas_guzzlers(provider_factory.clone())?
-                    .into_top_guzzlers(Some(*size_limit)))
-            } else {
-                None
-            };
-        let mut compiled_fns_inner = EvmCompilerFns::default();
-
-        let block_iter = args.block_iter;
-        for (symbol, run_type) in [
-            ("native", SimRunType::Native),
-            ("aot", SimRunType::AOTCompiled),
-            // ("jit", SimRunType::JITCompiled),
-        ] {
-            if let Some(bytecodes) = bytecodes.as_ref() {
-                compiled_fns_inner = sim_utils::make_compiled_fns(run_type.clone(), &bytecodes, Some(&self.dir_path))?;
-            }
-            let measurements = block_iter.clone().into_par_iter().map(|block_num| {
-                info!("Running {} for block {block_num}", symbol.to_uppercase());
-
-                let _compiled_fns = 
-                    if bytecodes.is_none() {
-                        let txs = txs_for_block(&provider_factory, block_num)?;
-                        let bytecodes = bytecode_touches::find_touched_bytecode(provider_factory.clone(), txs)?
-                            .into_iter().collect::<Vec<_>>();
-                        sim_utils::make_compiled_fns(run_type.clone(), &bytecodes, Some(&self.dir_path))?
-                    } else {
-                        compiled_fns_inner.clone()
-                    };
-
-                let sim_config = SimConfig::new(
-                    provider_factory.clone(),
-                    RevmcExtCtx::from(_compiled_fns).with_touch_tracking(),
-                );
-
-                let (mut sim, m_id) = 
-                    if args.run_rnd_txs {
-                        let block = provider_factory.block(block_num.into())?
-                            .ok_or_eyre("Block not found")?;
-                        if block.body.is_empty() {
-                            warn!("Found empty block {}, skipping", block_num);
-                            return Ok::<Option<MeasureRecord>, eyre::ErrReport>(None);
-                        }
-                        let txs_len = args.block_chunk
-                            .map(|chunk| {
-                                match chunk {
-                                    BlockPart::TOB(c) => (block.body.len() as f32 * c) as usize,
-                                    BlockPart::BOB(c) => (block.body.len() as f32 * (1. - c)) as usize,
-                                }
-                            })
-                            .unwrap_or(block.body.len());
-                        let tx_index = rnd_utils::random_sequence(0, txs_len, 1, args.seed)?[0]; // todo: seed in params
-                        let tx_hash = block.body[tx_index].hash;
-                        info!("Running random tx: {tx_hash:?}");
-
-                        (sim_config.make_tx_sim(tx_hash)?, MeasureId::Tx(tx_hash))
-                    } else {
-                        (sim_config.make_block_sim(block_num, args.block_chunk)?, MeasureId::Block(block_num))
-                    };
-                
-                info!("Checking validity of txs for block {block_num}");
-                let check_res = bench_utils::check_tx_sim_validity(
-                    &provider_factory,
-                    &mut sim,
-                    txs_for_block(&provider_factory, block_num)?,
-                    matches!(run_type, SimRunType::Native),
-                );
-                if let Err(e) = &check_res {
-                    warn!("Check failed for block {block_num} with: {e}");
-                }
-                
-                let exe_time = bench_utils::measure_execution_time(
-                    || { sim.run() }, 
-                    args.warmup_ms, 
-                    args.measurement_ms
-                );
-                Ok(Some(MeasureRecord {
-                    run_type: symbol.to_string(),
-                    id: m_id,
-                    exe_time,
-                    err: check_res.err().map(|e| e.to_string()),
-                }))
-            }).collect::<Vec<Result<_>>>();
-
-            for m in measurements {
-                match m {
-                    Err(e) => warn!("Error: {e}"),
-                    Ok(None) => continue,
-                    Ok(Some(record)) => writer.serialize(record)?,
-                }
-            }
-            writer.flush()?;
-        }
-
-        info!("Finished comparing block range ✨");
-        info!("The records are written to {}", args.out_path.display());
-        Ok(())
-    }
-
     
 }
 
@@ -240,9 +139,9 @@ impl<T, U> RunConfig<T, U> {
     
             let bytecode: Vec<_> = call.bytecode().original_bytes().into();
             let ext_ctx = sim_utils::make_ext_ctx(
-                run_type, 
+                &run_type, 
                 &[bytecode], 
-                Some(&self.dir_path)
+                Some(&self.aot_dir_path)
             )?;
             let mut sim = SimConfig::from(ext_ctx)
                 .make_call_sim(call, call_input.clone())?;
@@ -307,4 +206,176 @@ pub struct BlockRangeArgs {
     pub block_chunk: Option<BlockPart>,
     pub run_rnd_txs: bool,
     pub seed: Option<[u8;32]>,
+}
+
+struct BlockRangeRunner {
+    args: BlockRangeArgs,
+    provider_factory: ProviderFactory<DatabaseEnv>,
+    aot_dir_path: PathBuf,
+    writer: csv::Writer<std::fs::File>,
+    bytecodes: Vec<Vec<u8>>,
+}
+
+impl BlockRangeRunner {
+
+    fn new(
+        args: BlockRangeArgs,
+        provider_factory: ProviderFactory<DatabaseEnv>,
+        aot_dir_path: PathBuf,
+        bytecode_selection: &BytecodeSelection
+    ) -> Result<Self> {
+        let writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
+        let bytecodes = Self::bytecodes_for_range(
+            provider_factory.clone(), 
+            bytecode_selection, 
+            &args.block_iter
+        )?;
+        Ok(Self { args, provider_factory, aot_dir_path, writer, bytecodes })
+    }
+
+    fn run(&mut self) -> Result<()> {
+        for (symbol, run_type) in [
+            ("native", SimRunType::Native),
+            ("aot", SimRunType::AOTCompiled),
+            // ("jit", SimRunType::JITCompiled),
+        ] {
+            self.process_blocks_parallel(&symbol, &run_type)?;
+        }
+
+        info!("Finished comparing block range ✨");
+        info!("The records are written to {}", self.args.out_path.display());
+        Ok(())
+    }
+
+    fn process_blocks_parallel(&mut self, symbol: &str, run_type: &SimRunType) -> Result<()> {
+        let compiled_fns = self.compiled_fns_for_run_type(run_type)?;     
+        let measurements = self.args.block_iter.clone()
+            .into_par_iter()
+            .filter_map(|block_num| {
+                self.process_single_block(
+                    block_num, 
+                    symbol, 
+                    run_type, 
+                    compiled_fns.clone()
+                ).transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.write_measurement(measurements)?;
+        Ok(())
+    }
+
+    fn process_single_block(
+        &self, 
+        block_num: u64, 
+        symbol: &str, 
+        run_type: &SimRunType, 
+        compiled_fns_cache: EvmCompilerFns,
+    ) -> Result<Option<MeasureRecord>> {
+        info!("Running {} for block {block_num}", symbol.to_uppercase());
+
+        let sim_opt = self.create_sim_for_block(block_num, compiled_fns_cache)?;
+        if let Some((mut sim, m_id)) = sim_opt {
+            let check_res = bench_utils::check_tx_sim_validity(
+                &self.provider_factory,
+                &mut sim,
+                txs_for_block(&self.provider_factory, block_num)?,
+                matches!(run_type, SimRunType::Native),
+            );
+            if let Err(e) = &check_res {
+                warn!("Check failed for block {block_num} with: {e}");
+            }
+            
+            let exe_time = bench_utils::measure_execution_time(
+                || { sim.run() }, 
+                self.args.warmup_ms, 
+                self.args.measurement_ms
+            );
+            Ok(Some(MeasureRecord {
+                run_type: symbol.to_string(),
+                id: m_id,
+                exe_time,
+                err: check_res.err().map(|e| e.to_string()),
+            }))
+        } else {
+            return Ok(None);
+        }
+    }
+
+    fn create_sim_for_block(&self, block_num: u64, compiled_fns: EvmCompilerFns) -> Result<Option<(Simulation<RevmcExtCtx, StateProviderCacheDB>, MeasureId)>> {
+        let sim_config = SimConfig::new(
+            self.provider_factory.clone(),
+            RevmcExtCtx::from(compiled_fns).with_touch_tracking(),
+        );
+        if self.args.run_rnd_txs {
+            self.create_rnd_tx_sim(sim_config, block_num)
+        } else {
+            let sim = sim_config.make_block_sim(block_num, self.args.block_chunk)?;
+            let m_id = MeasureId::Block(block_num);
+            Ok(Some((sim, m_id)))
+        }
+    }
+
+    fn create_rnd_tx_sim(
+        &self,
+        sim_config: SimConfig<ProviderFactory<DatabaseEnv>>,
+        block_num: u64,
+    ) -> Result<Option<(Simulation<RevmcExtCtx, StateProviderCacheDB>, MeasureId)>> {
+        let block = self.provider_factory.block(block_num.into())?
+            .ok_or_eyre("Block not found")?;
+        if block.body.is_empty() {
+            warn!("Found empty block {}, skipping", block_num);
+            return Ok(None);
+        }
+        let txs_len = self.args.block_chunk
+            .map(|chunk| {
+                match chunk {
+                    BlockPart::TOB(c) => (block.body.len() as f32 * c) as usize,
+                    BlockPart::BOB(c) => (block.body.len() as f32 * (1. - c)) as usize,
+                }
+            })
+            .unwrap_or(block.body.len());
+        let tx_index = rnd_utils::random_sequence(0, txs_len, 1, self.args.seed)?[0];
+        let tx_hash = block.body[tx_index].hash;
+        info!("Running random tx: {tx_hash:?}");
+
+        Ok(Some((sim_config.make_tx_sim(tx_hash)?, MeasureId::Tx(tx_hash))))
+    }
+
+    fn compiled_fns_for_run_type(&self, run_type: &SimRunType) -> Result<EvmCompilerFns> {
+        if matches!(run_type, SimRunType::Native) {
+            Ok(EvmCompilerFns::default())
+        } else {
+            info!("Aquiring {} compiled fns for {run_type:?}", self.bytecodes.len());
+            sim_utils::make_compiled_fns(
+                run_type, 
+                &self.bytecodes, 
+                Some(&self.aot_dir_path)
+            )
+        }
+    }
+
+    fn bytecodes_for_range(
+        provider_factory: ProviderFactory<DatabaseEnv>,
+        bytecode_selection: &BytecodeSelection,
+        block_iter: &Vec<u64>,
+    ) -> Result<Vec<Vec<u8>>> {
+        Ok(if let BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } = bytecode_selection {
+            gconfig
+                .find_gas_guzzlers(provider_factory)?
+                .into_top_guzzlers(Some(*size_limit))
+        } else {
+            bytecode_touches::find_touched_bytecode_blocks(provider_factory, block_iter)?
+                .into_iter()
+                .collect::<Vec<_>>()
+        })
+    }
+
+    fn write_measurement(&mut self, records: Vec<MeasureRecord>) -> Result<()> {
+        for record in records {
+            self.writer.serialize(record)?;
+        }
+        self.writer.flush()?;
+        Ok(())
+    }
+
 }
