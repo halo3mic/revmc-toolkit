@@ -68,7 +68,7 @@ fn main() -> Result<()> {
                 BenchType::Tx { tx_hash, bytecode_selection, comp_opt_level } => {
                     info!("Running bench for tx: {tx_hash:?}");
                     config.set_bytecode_selection_opt(bytecode_selection);
-                    config.set_compile_opt_level(comp_opt_level);
+                    config.set_compile_opt_level(comp_opt_level)?;
                     let tx_hash = B256::from_str(&tx_hash)?;
                     config.bench_tx(tx_hash)?;
                 }
@@ -76,14 +76,14 @@ fn main() -> Result<()> {
                     let BlockArgsCli { block_num, tob_block_chunk, bob_block_chunk } = block_args;
                     info!("Running bench for block: {:?}", block_num);
                     config.set_bytecode_selection_opt(bytecode_selection);
-                    config.set_compile_opt_level(comp_opt_level);
+                    config.set_compile_opt_level(comp_opt_level)?;
                     let block_chunk = tob_block_chunk
                         .map(|c| BlockPart::TOB(c))
                         .or(bob_block_chunk.map(|c| BlockPart::BOB(c)));
                     config.bench_block(block_num, block_chunk)?;
                 }
                 BenchType::Call { comp_opt_level } => {
-                    config.set_compile_opt_level(comp_opt_level);
+                    config.set_compile_opt_level(comp_opt_level)?;
                     let call_type = SimCall::Fibbonacci; // todo: different call opt
                     info!("Running bench for call: {call_type:?}");
                     let input = call_type.default_input();
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
                 BenchType::BlockRange { block_range_args, bytecode_selection, comp_opt_level } => {
                     info!("Comparing block range: {}", block_range_args.block_range);
                     config.set_bytecode_selection_opt(bytecode_selection);
-                    config.set_compile_opt_level(comp_opt_level);
+                    config.set_compile_opt_level(comp_opt_level)?;
                     let args = block_range_args.try_into()?;
                     config.bench_block_range(args)?;
                 }

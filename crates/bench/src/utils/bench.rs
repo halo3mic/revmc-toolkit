@@ -1,4 +1,5 @@
 use std::time::{Instant, Duration};
+use revmc_toolkit_build::{CompilerOptions, OptimizationLevelDeseralizable};
 use tracing::info;
 
 
@@ -47,6 +48,7 @@ pub(crate) struct RunConfig<T, U> {
     pub aot_dir_path: PathBuf,
     pub reth_db_path: T,
     pub compile_selection: U,
+    pub comp_opt_level: OptimizationLevelDeseralizable,
 }
 
 
@@ -140,4 +142,10 @@ pub fn check_tx_sim_validity(
     }
 
     Ok(())
+}
+
+pub fn compile_opt_from_aot_path(aot_path: PathBuf) -> CompilerOptions {
+    let mut opt = CompilerOptions::default();
+    opt.out_dir = aot_path;
+    opt
 }

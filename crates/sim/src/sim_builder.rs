@@ -269,7 +269,7 @@ impl<ExtCtx, DB> Simulation<ExtCtx, DB>
 
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub enum BlockPart {
     TOB(f32),
     BOB(f32)

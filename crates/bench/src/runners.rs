@@ -4,6 +4,7 @@ use eyre::{OptionExt, Result};
 use revm::primitives::{B256, Bytes};
 use reth_provider::BlockReader;
 
+use revmc_toolkit_build::CompilerOptions;
 use revmc_toolkit_utils::evm::make_provider_factory;
 use revmc_toolkit_sim::sim_builder::BlockPart;
 use revmc_toolkit_load::RevmcExtCtx;
@@ -23,7 +24,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             match &run_type {
                 SimRunType::AOTCompiled | SimRunType::JITCompiled => {
                     let bytecodes = self.compile_selection.bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
-                    let ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(&self.aot_dir_path))?
+                    let ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(self.compile_opt()))?
                         .with_touch_tracking();
                     (ctx, false)
                 }
@@ -71,7 +72,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             match run_type {
                 SimRunType::AOTCompiled | SimRunType::JITCompiled => {
                     let bytecodes = self.compile_selection.bytecodes(provider_factory.clone(), Some(block_txs.clone()))?;
-                    sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(&self.aot_dir_path))?
+                    sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(self.compile_opt()))?
                         .with_touch_tracking()
                 }
                 SimRunType::Native => RevmcExtCtx::default()
@@ -94,7 +95,6 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         Ok(())
     }
 
-
 }
 
 impl<T, U> RunConfig<T, U> {
@@ -112,7 +112,7 @@ impl<T, U> RunConfig<T, U> {
         let ext_ctx = sim_utils::make_ext_ctx(
             &run_type, 
             &[bytecode], 
-            Some(&self.aot_dir_path),
+            Some(self.compile_opt()),
         )?;
         let mut sim = SimConfig::from(ext_ctx)
             .make_call_sim(call, call_input.clone())?;
@@ -122,6 +122,10 @@ impl<T, U> RunConfig<T, U> {
         println!("Result: {:?}", result);
 
         Ok(())
+    }
+
+    pub fn compile_opt(&self) -> CompilerOptions {
+        bench_utils::compile_opt_from_aot_path(self.aot_dir_path.clone())
     }
 
 }

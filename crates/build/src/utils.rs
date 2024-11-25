@@ -13,7 +13,7 @@ pub fn bytecode_hash_str(bytecode: &[u8]) -> String {
     revm::primitives::keccak256(bytecode).to_string()
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub enum OptimizationLevelDeseralizable {
     None,
     Less,

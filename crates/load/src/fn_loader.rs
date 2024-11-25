@@ -24,12 +24,17 @@ impl<'a> EvmCompilerFnLoader<'a> {
         Ok(fnc)
     }
 
-    pub fn load_selected(&self, bytecode_hashes: Vec<B256>) -> Result<Vec<(B256, (EvmCompilerFn, Library))>> {
+    pub fn load_selected(&self, bytecode_hashes: Vec<B256>) -> Vec<(B256, (EvmCompilerFn, Library))> {
         debug!("Loading AOT compilations from dir {}: {bytecode_hashes:?}", self.dir_path.display());
-        bytecode_hashes.into_iter().map(|hash| {
-            let fnc = self.load(&hash)?;
-            Ok((hash, fnc))
-        }).collect::<Result<Vec<_>>>()
+        bytecode_hashes.into_iter().filter_map(|hash| {
+            match self.load(&hash) {
+                Ok(fnc) => Some((hash, fnc)),
+                Err(e) => {
+                    tracing::error!("Failed to load AOT compilation for {hash}: {e}");
+                    None
+                }
+            }
+        }).collect::<Vec<_>>()
     }
 
     pub fn load_all(&self) -> Result<Vec<(B256, (EvmCompilerFn, Library))>> {
@@ -44,8 +49,13 @@ impl<'a> EvmCompilerFnLoader<'a> {
             let name = name.to_str().ok_or_eyre("Invalid directory name")?;
             let hash = B256::from_str(name)?;
             let path = entry.path().join("a.so");
-            let fnc = Self::load_from_path(name, path)?;
-            hash_fn_pairs.push((hash, fnc));
+
+            match Self::load_from_path(name, path) {
+                Ok(fnc) => hash_fn_pairs.push((hash, fnc)),
+                Err(e) => {
+                    tracing::error!("Failed to load AOT compilation for {name}: {e}");
+                }
+            }
         }
         Ok(hash_fn_pairs)
     }

@@ -1,4 +1,5 @@
 use std::{path::PathBuf, time::Duration};
+use revmc_toolkit_build::CompilerOptions;
 use tracing::{info, warn, span, Level};
 use criterion::Criterion;
 use eyre::{OptionExt, Result};
@@ -8,6 +9,7 @@ use revm::primitives::{Bytes, B256};
 use reth_provider::{ProviderFactory, BlockReader};
 use reth_db::DatabaseEnv;
 
+use revmc_toolkit_build::OptimizationLevelDeseralizable;
 use revmc_toolkit_load::{EvmCompilerFns, RevmcExtCtx};
 use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
 use revmc_toolkit_sim::{sim_builder::{BlockPart, Simulation, StateProviderCacheDB}, bytecode_touches};
@@ -26,7 +28,12 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         reth_db_path: PathBuf, 
         compile_selection: BytecodeSelection
     ) -> Self {
-        Self { aot_dir_path, reth_db_path, compile_selection }
+        Self { 
+            aot_dir_path, 
+            reth_db_path, 
+            compile_selection,
+            comp_opt_level: Default::default(),
+        }
     }
 
     pub fn bench_tx(&self, tx_hash: B256) -> Result<()> {
@@ -98,7 +105,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         ] {
             info!("Running {}", symbol.to_uppercase());
     
-            let ext_ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(&self.aot_dir_path))?
+            let ext_ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(self.compile_opt()))?
                 .with_touch_tracking();
             let sim_config = SimConfig::new(provider_factory.clone(), ext_ctx);
             let mut sim = build_sim_fn(sim_config)?;
@@ -141,7 +148,7 @@ impl<T, U> RunConfig<T, U> {
             let ext_ctx = sim_utils::make_ext_ctx(
                 &run_type, 
                 &[bytecode], 
-                Some(&self.aot_dir_path)
+                Some(self.compile_opt())
             )?;
             let mut sim = SimConfig::from(ext_ctx)
                 .make_call_sim(call, call_input.clone())?;
@@ -175,6 +182,13 @@ impl<T> RunConfig<T, BytecodeSelection> {
         };
     }
 
+    pub fn set_compile_opt_level(&mut self, level: Option<u8>) -> Result<()> {
+        if let Some(level) = level {
+            self.comp_opt_level = level.try_into()?;
+        }
+        Ok(())
+    }
+
 }
 
 fn txs_for_block(provider_factory: &ProviderFactory<DatabaseEnv>, block_num: u64) -> Result<Vec<B256>> {
@@ -198,21 +212,29 @@ struct MeasureRecord {
     err: Option<String>,
 }
 
+#[derive(serde::Serialize)]
 pub struct BlockRangeArgs {
+    #[serde(skip)]
     pub block_iter: Vec<u64>,
-    pub out_path: PathBuf,
+    #[serde(skip)]
+    pub out_dir_path: PathBuf,
     pub warmup_ms: u32,
     pub measurement_ms: u32,
     pub block_chunk: Option<BlockPart>,
     pub run_rnd_txs: bool,
     pub seed: Option<[u8;32]>,
+    pub comp_opt_level: OptimizationLevelDeseralizable,
 }
+
+use std::sync::Mutex;
+use csv::{Writer, WriterBuilder};
+use std::fs::{File, OpenOptions};
 
 struct BlockRangeRunner {
     args: BlockRangeArgs,
     provider_factory: ProviderFactory<DatabaseEnv>,
     aot_dir_path: PathBuf,
-    writer: csv::Writer<std::fs::File>,
+    writer: Mutex<csv::Writer<std::fs::File>>,
     bytecodes: Vec<Vec<u8>>,
 }
 
@@ -224,7 +246,7 @@ impl BlockRangeRunner {
         aot_dir_path: PathBuf,
         bytecode_selection: &BytecodeSelection
     ) -> Result<Self> {
-        let writer = csv::WriterBuilder::new().from_path(&args.out_path)?;
+        let writer = Mutex::new(Self::create_csv_writer(&args, bytecode_selection)?);
         let bytecodes = Self::bytecodes_for_range(
             provider_factory.clone(), 
             bytecode_selection, 
@@ -243,24 +265,23 @@ impl BlockRangeRunner {
         }
 
         info!("Finished comparing block range ✨");
-        info!("The records are written to {}", self.args.out_path.display());
+        info!("The records are written to {}", self.args.out_dir_path.display());
         Ok(())
     }
 
     fn process_blocks_parallel(&mut self, symbol: &str, run_type: &SimRunType) -> Result<()> {
         let compiled_fns = self.compiled_fns_for_run_type(run_type)?;     
-        let measurements = self.args.block_iter.clone()
+        self.args.block_iter.clone()
             .into_par_iter()
-            .filter_map(|block_num| {
+            .map(|block_num| {
                 self.process_single_block(
                     block_num, 
                     symbol, 
                     run_type, 
                     compiled_fns.clone()
-                ).transpose()
+                )
             })
             .collect::<Result<Vec<_>>>()?;
-        self.write_measurement(measurements)?;
         Ok(())
     }
 
@@ -270,7 +291,7 @@ impl BlockRangeRunner {
         symbol: &str, 
         run_type: &SimRunType, 
         compiled_fns_cache: EvmCompilerFns,
-    ) -> Result<Option<MeasureRecord>> {
+    ) -> Result<()> {
         info!("Running {} for block {block_num}", symbol.to_uppercase());
 
         let sim_opt = self.create_sim_for_block(block_num, compiled_fns_cache)?;
@@ -284,21 +305,19 @@ impl BlockRangeRunner {
             if let Err(e) = &check_res {
                 warn!("Check failed for block {block_num} with: {e}");
             }
-            
             let exe_time = bench_utils::measure_execution_time(
                 || { sim.run() }, 
                 self.args.warmup_ms, 
                 self.args.measurement_ms
             );
-            Ok(Some(MeasureRecord {
+            self.write_measurement(MeasureRecord {
                 run_type: symbol.to_string(),
                 id: m_id,
                 exe_time,
                 err: check_res.err().map(|e| e.to_string()),
-            }))
-        } else {
-            return Ok(None);
+            })?;
         }
+        Ok(())
     }
 
     fn create_sim_for_block(&self, block_num: u64, compiled_fns: EvmCompilerFns) -> Result<Option<(Simulation<RevmcExtCtx, StateProviderCacheDB>, MeasureId)>> {
@@ -349,7 +368,7 @@ impl BlockRangeRunner {
             sim_utils::make_compiled_fns(
                 run_type, 
                 &self.bytecodes, 
-                Some(&self.aot_dir_path)
+                Some(self.compile_opt())
             )
         }
     }
@@ -370,12 +389,43 @@ impl BlockRangeRunner {
         })
     }
 
-    fn write_measurement(&mut self, records: Vec<MeasureRecord>) -> Result<()> {
-        for record in records {
-            self.writer.serialize(record)?;
-        }
-        self.writer.flush()?;
+    fn write_measurement(&self, record: MeasureRecord) -> Result<()> {
+        let mut writer = self.writer.lock().unwrap();
+        writer.serialize(record)?;
+        writer.flush()?;
         Ok(())
+    }
+
+    fn create_csv_writer(
+        args: &BlockRangeArgs, 
+        bytecode_selection: &BytecodeSelection
+    ) -> Result<Writer<File>> {
+        revmc_toolkit_utils::misc::make_dir(&args.out_dir_path)?;
+        let config_path = args.out_dir_path.join("config.json");
+        serde_json::to_writer_pretty(
+            std::fs::File::create(&config_path)?,
+            &serde_json::json!({
+                "args": args,
+                "bytecode_selection": bytecode_selection,
+            })
+        )?;
+        let data_path = args.out_dir_path.join("data.csv");
+        let file_exists = data_path.exists();
+        let file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(data_path)?;
+        let writer = WriterBuilder::new()
+            .has_headers(!file_exists)
+            .from_writer(file);
+        Ok(writer)
+    }
+
+    fn compile_opt(&self) -> CompilerOptions {
+        CompilerOptions::default()
+            .with_out_dir(self.aot_dir_path.clone())
+            .with_opt_lvl(self.args.comp_opt_level.clone())
     }
 
 }

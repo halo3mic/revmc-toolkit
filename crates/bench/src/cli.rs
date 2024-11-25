@@ -11,7 +11,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Build(BuildArgsCli),
     #[command(subcommand)]
     Run(RunArgsCli),
     #[command(subcommand)]
@@ -22,17 +21,23 @@ pub enum Commands {
 pub enum BenchType {
     Tx {
         tx_hash: String,
+        #[arg(long)]
+        comp_opt_level: Option<u8>,
         #[command(subcommand)]
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Block {
+        #[arg(long)]
+        comp_opt_level: Option<u8>,
         #[command(flatten)]
         block_args: BlockArgsCli,
         #[command(subcommand)]
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
-    Call,
+    Call { comp_opt_level: Option<u8> },
     BlockRange {
+        #[arg(long)]
+        comp_opt_level: Option<u8>,
         #[command(flatten)]
         block_range_args: BlockRangeArgsCli,
         #[command(subcommand)]
@@ -45,11 +50,15 @@ pub enum RunArgsCli {
     Tx { 
         tx_hash: String,
         #[arg(long)]
+        comp_opt_level: Option<u8>,
+        #[arg(long)]
         run_type: String,
         #[command(subcommand)]
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Block {
+        #[arg(long)]
+        comp_opt_level: Option<u8>,
         #[command(flatten)]
         block_args: BlockArgsCli,
         #[arg(long)]
@@ -58,6 +67,8 @@ pub enum RunArgsCli {
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Call {
+        #[arg(long)]
+        comp_opt_level: Option<u8>,
         #[arg(long)]
         run_type: String,
         #[arg(long)]
@@ -83,11 +94,6 @@ pub struct GasGuzzlersCli {
     pub seed: Option<String>,
     #[arg(long, help = "Size limit for gas guzzlers selection.")]
     pub size_limit: usize
-}
-
-#[derive(Args, Debug)]
-pub struct BuildArgsCli {
-    pub path: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -135,6 +141,8 @@ pub struct BlockRangeArgsCli {
     pub run_rnd_txs: bool,
     #[arg(long, help = "Comma-separated list of block numbers to blacklist.")]
     pub blacklist: Option<String>,
+    #[arg(long, help = "Compiler optimization level.")]
+    pub comp_opt_level: Option<u8>,
 }
 
 use revmc_toolkit_sim::gas_guzzlers::GasGuzzlerConfig;
@@ -179,7 +187,7 @@ impl BlockRangeArgsCli {
         Ok(block_iter)
     }
 
-    fn out_path(&self) -> Result<PathBuf> {
+    fn out_dir_path(&self) -> Result<PathBuf> {
         let default_out_dir = std::env::current_dir()?
             .join(".data/measurements");
         utils::make_dir(&default_out_dir)?;
@@ -192,12 +200,12 @@ impl BlockRangeArgsCli {
                 let epoch_now = utils::epoch_now()?;
                 format!("f{start}t{end}s{range_size}e{epoch_now}")
             }};
-        let out_path = self.out_dir.clone()
+        let out_dir_path = self.out_dir.clone()
             .map(|dir_path_str| PathBuf::from(dir_path_str))
             .unwrap_or(default_out_dir)
-            .join(label + ".csv");
+            .join(label);
 
-        Ok(out_path)
+        Ok(out_dir_path)
     }
 
     fn block_chunk(&self) -> Option<BlockPart> {
@@ -255,9 +263,10 @@ impl TryInto<BlockRangeArgs> for BlockRangeArgsCli {
             warmup_ms: self.warmup_ms.unwrap_or(3_000),
             block_chunk: self.block_chunk(),
             block_iter: self.block_iter()?,
-            out_path: self.out_path()?,
+            out_dir_path: self.out_dir_path()?,
             run_rnd_txs: self.run_rnd_txs,
             seed: self.hashed_seed(),
+            comp_opt_level: self.comp_opt_level.unwrap_or_default().try_into()?,
         })
     }
 }

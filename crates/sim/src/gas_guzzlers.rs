@@ -269,7 +269,7 @@ impl<K: Eq + std::hash::Hash> AddAssign for MapWrapper<K, ContractUsage> {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct GasGuzzlerConfig {
     pub start_block: Option<u64>,
     pub end_block: Option<u64>,

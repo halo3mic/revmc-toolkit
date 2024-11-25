@@ -2,7 +2,7 @@ use revm::{primitives::{Bytecode, Bytes, B256, U256, hex, keccak256}, InMemoryDB
 use reth_provider::ProviderFactory;
 use reth_db::DatabaseEnv;
 
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 use eyre::Result;
 
 use revmc_toolkit_sim::sim_builder::{
@@ -85,7 +85,7 @@ impl FromStr for SimRunType {
 pub fn make_ext_ctx(
     run_type: &SimRunType, 
     bytecodes: &[Vec<u8>], 
-    aot_dir: Option<&PathBuf>,
+    compile_opt: Option<CompilerOptions>,
 ) -> Result<RevmcExtCtx> {
     make_compiled_fns(run_type, bytecodes, compile_opt)
         .map(Into::into)
@@ -94,28 +94,29 @@ pub fn make_ext_ctx(
 pub fn make_compiled_fns(
     run_type: &SimRunType, 
     bytecodes: &[Vec<u8>], 
-    aot_dir: Option<&PathBuf>,
+    compile_opt: Option<CompilerOptions>,
 ) -> Result<EvmCompilerFns> {
     Ok(match run_type {
         SimRunType::Native => EvmCompilerFns::default(),
         SimRunType::JITCompiled => {
-            revmc_toolkit_build::compile_contracts_jit(bytecodes, None)?
+            revmc_toolkit_build::compile_contracts_jit(bytecodes, compile_opt)?
                 .into()
         }
         SimRunType::AOTCompiled => {
+            let compile_opt = compile_opt.unwrap_or_default();
+            let aot_out_dir = compile_opt.out_dir.clone();
             let bytecode_hashes = bytecodes.iter().map(|code| keccak256(&code)).collect();
-            let comp_opt = aot_dir.map(|d| CompilerOptions::default().with_out_dir(d));
-            revmc_toolkit_build::compile_contracts_aot(bytecodes, comp_opt)?
+            revmc_toolkit_build::compile_contracts_aot(bytecodes, Some(compile_opt))?
                 .into_iter()
                 .collect::<Result<Vec<_>>>()?;
-            let aot_dir = aot_dir.ok_or_else(|| eyre::eyre!("AOT dir not provided"))?;
-            EvmCompilerFnLoader::new(aot_dir)
-                .load_selected(bytecode_hashes)?
+            EvmCompilerFnLoader::new(&aot_out_dir)
+                .load_selected(bytecode_hashes)
                 .into()
         }
     })
 }
 
+#[derive(serde::Serialize)]
 pub enum BytecodeSelection {
     Selected, 
     GasGuzzlers { 
