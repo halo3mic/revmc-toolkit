@@ -1,15 +1,13 @@
+use libloading::Library;
 use revm::primitives::B256;
 use revmc::EvmCompilerFn;
-use libloading::Library;
 
-
-use std::{str::FromStr, path::PathBuf};
 use eyre::{OptionExt, Result};
+use std::{path::PathBuf, str::FromStr};
 use tracing::debug;
 
-
 pub struct EvmCompilerFnLoader<'a> {
-    dir_path: &'a PathBuf
+    dir_path: &'a PathBuf,
 }
 
 impl<'a> EvmCompilerFnLoader<'a> {
@@ -24,23 +22,33 @@ impl<'a> EvmCompilerFnLoader<'a> {
         Ok(fnc)
     }
 
-    pub fn load_selected(&self, bytecode_hashes: Vec<B256>) -> Vec<(B256, (EvmCompilerFn, Library))> {
-        debug!("Loading AOT compilations from dir {}: {bytecode_hashes:?}", self.dir_path.display());
-        bytecode_hashes.into_iter().filter_map(|hash| {
-            match self.load(&hash) {
+    pub fn load_selected(
+        &self,
+        bytecode_hashes: Vec<B256>,
+    ) -> Vec<(B256, (EvmCompilerFn, Library))> {
+        debug!(
+            "Loading AOT compilations from dir {}: {bytecode_hashes:?}",
+            self.dir_path.display()
+        );
+        bytecode_hashes
+            .into_iter()
+            .filter_map(|hash| match self.load(&hash) {
                 Ok(fnc) => Some((hash, fnc)),
                 Err(e) => {
                     tracing::error!("Failed to load AOT compilation for {hash}: {e}");
                     None
                 }
-            }
-        }).collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
     }
 
     pub fn load_all(&self) -> Result<Vec<(B256, (EvmCompilerFn, Library))>> {
-        debug!("Loading all AOT compilations from dir {}", self.dir_path.display());
+        debug!(
+            "Loading all AOT compilations from dir {}",
+            self.dir_path.display()
+        );
         let mut hash_fn_pairs = vec![];
-        for entry in std::fs::read_dir(&self.dir_path)? {
+        for entry in std::fs::read_dir(self.dir_path)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() {
                 continue;

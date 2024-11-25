@@ -1,5 +1,10 @@
-use clap::{Parser, Subcommand, Args};
+use crate::{benches::BlockRangeArgs, utils, BlockPart};
+use clap::{Args, Parser, Subcommand};
+use eyre::Result;
 use revm::primitives::Bytes;
+use revmc_toolkit_sim::gas_guzzlers::GasGuzzlerConfig;
+use revmc_toolkit_utils::rnd as rnd_utils;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -14,7 +19,7 @@ pub enum Commands {
     #[command(subcommand)]
     Run(RunArgsCli),
     #[command(subcommand)]
-    Bench(BenchType),
+    Bench(Box<BenchType>),
 }
 
 #[derive(Subcommand)]
@@ -34,7 +39,9 @@ pub enum BenchType {
         #[command(subcommand)]
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
-    Call { comp_opt_level: Option<u8> },
+    Call {
+        comp_opt_level: Option<u8>,
+    },
     BlockRange {
         #[arg(long)]
         comp_opt_level: Option<u8>,
@@ -47,7 +54,7 @@ pub enum BenchType {
 
 #[derive(Subcommand)]
 pub enum RunArgsCli {
-    Tx { 
+    Tx {
         tx_hash: String,
         #[arg(long)]
         comp_opt_level: Option<u8>,
@@ -83,7 +90,7 @@ pub enum BytecodeSelectionCli {
 }
 
 #[derive(Args, Debug)]
-pub struct GasGuzzlersCli { 
+pub struct GasGuzzlersCli {
     #[arg(short, long, help = "Start block for gas guzzlers selection.")]
     pub start_block: Option<u64>,
     #[arg(short, long, help = "End block for gas guzzlers selection.")]
@@ -93,7 +100,7 @@ pub struct GasGuzzlersCli {
     #[arg(long, help = "Seed for random number generator.")]
     pub seed: Option<String>,
     #[arg(long, help = "Size limit for gas guzzlers selection.")]
-    pub size_limit: usize
+    pub size_limit: usize,
 }
 
 #[derive(Args, Debug)]
@@ -108,7 +115,7 @@ pub struct BlockArgsCli {
 #[derive(Args, Debug)]
 pub struct BenchArgsCli {
     #[arg(short, long, help = "TxHash of the transaction to run/bench.")]
-    pub tx_hash: Option<String>, 
+    pub tx_hash: Option<String>,
     #[arg(short, long, help = "BlockNumber of the block to run/bench.")]
     pub block_num: Option<String>,
     #[arg(long, help = "Proportion of the block to use - top of the block.")]
@@ -123,7 +130,11 @@ pub struct BlockRangeArgsCli {
     pub block_range: String,
     #[arg(help = "Label of run")]
     pub label: Option<String>,
-    #[arg(short, long, help = "Number of samples taken from the range. If omitted the whole range is compared.")]
+    #[arg(
+        short,
+        long,
+        help = "Number of samples taken from the range. If omitted the whole range is compared."
+    )]
     pub sample_size: Option<u32>,
     #[arg(short, long, help = "Path to dir where measurements will be stored.")]
     pub out_dir: Option<String>,
@@ -137,7 +148,11 @@ pub struct BlockRangeArgsCli {
     pub bob_block_chunk: Option<f32>,
     #[arg(long, help = "Seed for random number generator.")]
     pub rnd_seed: Option<String>,
-    #[arg(default_value = "false", long, help = "If present will run single random transaction per block. If block-chunk is set, it will pick the transaction from it.")]
+    #[arg(
+        default_value = "false",
+        long,
+        help = "If present will run single random transaction per block. If block-chunk is set, it will pick the transaction from it."
+    )]
     pub run_rnd_txs: bool,
     #[arg(long, help = "Comma-separated list of block numbers to blacklist.")]
     pub blacklist: Option<String>,
@@ -145,16 +160,17 @@ pub struct BlockRangeArgsCli {
     pub comp_opt_level: Option<u8>,
 }
 
-use revmc_toolkit_sim::gas_guzzlers::GasGuzzlerConfig;
-
-impl Into<(GasGuzzlerConfig, usize)> for GasGuzzlersCli {
-    fn into(self) -> (GasGuzzlerConfig, usize) {
-        (GasGuzzlerConfig {
-            start_block: self.start_block,
-            end_block: self.end_block,
-            sample_size: self.sample_size,
-            seed: self.seed.map(hashed),
-        }, self.size_limit)
+impl From<GasGuzzlersCli> for (GasGuzzlerConfig, usize) {
+    fn from(cli: GasGuzzlersCli) -> (GasGuzzlerConfig, usize) {
+        (
+            GasGuzzlerConfig {
+                start_block: cli.start_block,
+                end_block: cli.end_block,
+                sample_size: cli.sample_size,
+                seed: cli.seed.map(hashed),
+            },
+            cli.size_limit,
+        )
     }
 }
 
@@ -162,36 +178,32 @@ fn hashed<T: AsRef<str>>(seed_str: T) -> [u8; 32] {
     revm::primitives::keccak256(seed_str.as_ref().as_bytes()).0
 }
 
-use crate::{benches::BlockRangeArgs, utils, BlockPart};
-use revmc_toolkit_utils::rnd as rnd_utils;
-use std::path::PathBuf;
-use eyre::Result;
-
 impl BlockRangeArgsCli {
-
     fn block_iter(&self) -> Result<Vec<u64>> {
         let (start, end, range_size) = self.start_end_range()?;
         let blacklist = self.parse_blacklist()?;
-        let block_iter = 
-            if let Some(sample_size) = self.sample_size {
-                if sample_size > range_size {
-                    return Err(eyre::eyre!("Invalid sample size"));
-                }
-                let seed = self.hashed_seed();
-                rnd_utils::random_sequence_with_blacklist(
-                    start, end, sample_size as usize, seed, blacklist,
-                )?
-            } else {
-                (start..end).collect()
-            };
+        let block_iter = if let Some(sample_size) = self.sample_size {
+            if sample_size > range_size {
+                return Err(eyre::eyre!("Invalid sample size"));
+            }
+            let seed = self.hashed_seed();
+            rnd_utils::random_sequence_with_blacklist(
+                start,
+                end,
+                sample_size as usize,
+                seed,
+                blacklist,
+            )?
+        } else {
+            (start..end).collect()
+        };
         Ok(block_iter)
     }
 
     fn out_dir_path(&self) -> Result<PathBuf> {
-        let default_out_dir = std::env::current_dir()?
-            .join(".data/measurements");
+        let default_out_dir = std::env::current_dir()?.join(".data/measurements");
         utils::make_dir(&default_out_dir)?;
-        
+
         let label = match self.label {
             Some(ref label) => label.clone(),
             None => {
@@ -199,9 +211,12 @@ impl BlockRangeArgsCli {
                 let range_size = self.sample_size.unwrap_or(range_size);
                 let epoch_now = utils::epoch_now()?;
                 format!("f{start}t{end}s{range_size}e{epoch_now}")
-            }};
-        let out_dir_path = self.out_dir.clone()
-            .map(|dir_path_str| PathBuf::from(dir_path_str))
+            }
+        };
+        let out_dir_path = self
+            .out_dir
+            .clone()
+            .map(PathBuf::from)
             .unwrap_or(default_out_dir)
             .join(label);
 
@@ -211,26 +226,22 @@ impl BlockRangeArgsCli {
     fn block_chunk(&self) -> Option<BlockPart> {
         if let Some(tob) = self.tob_block_chunk {
             Some(BlockPart::TOB(tob))
-        } else if let Some(bob) = self.bob_block_chunk {
-            Some(BlockPart::BOB(bob))
         } else {
-            None
+            self.bob_block_chunk.map(BlockPart::BOB)
         }
     }
 
     fn start_end_range(&self) -> Result<(u64, u64, u32)> {
-        let [start, end, ..] = self.block_range
-            .split_terminator("..")
-            .collect::<Vec<_>>()[..]
-            else {
-                return Err(eyre::eyre!("Invalid block range format"));
-            };
+        let [start, end, ..] = self.block_range.split_terminator("..").collect::<Vec<_>>()[..]
+        else {
+            return Err(eyre::eyre!("Invalid block range format"));
+        };
         let start = start.parse::<u64>()?;
         let end = end.parse::<u64>()?;
         if end < start {
             return Err(eyre::eyre!("End block must be greater than start block"));
         }
-        let range_size = (end-start) as u32;
+        let range_size = (end - start) as u32;
         Ok((start, end, range_size))
     }
 
@@ -250,8 +261,6 @@ impl BlockRangeArgsCli {
             .transpose()
             .map(|blacklist| blacklist.unwrap_or_default())
     }
-
-
 }
 
 impl TryInto<BlockRangeArgs> for BlockRangeArgsCli {

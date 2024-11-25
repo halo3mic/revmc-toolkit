@@ -1,36 +1,39 @@
-use std::{path::PathBuf, time::Duration};
-use revmc_toolkit_build::CompilerOptions;
-use tracing::{info, warn, span, Level};
 use criterion::Criterion;
 use eyre::{OptionExt, Result};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use revmc_toolkit_build::CompilerOptions;
+use std::{path::PathBuf, time::Duration};
+use tracing::{info, span, warn, Level};
 
-use revm::primitives::{Bytes, B256};
-use reth_provider::{ProviderFactory, BlockReader};
 use reth_db::DatabaseEnv;
+use reth_provider::{BlockReader, ProviderFactory};
+use revm::primitives::{Bytes, B256};
 
-use revmc_toolkit_build::OptimizationLevelDeseralizable;
-use revmc_toolkit_load::{EvmCompilerFns, RevmcExtCtx};
-use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
-use revmc_toolkit_sim::{sim_builder::{BlockPart, Simulation, StateProviderCacheDB}, bytecode_touches};
 use crate::cli::BytecodeSelectionCli;
 use crate::utils::{
-    sim::{SimCall, SimConfig, SimRunType, BytecodeSelection, self as sim_utils},
     bench::{self as bench_utils, RunConfig},
+    sim::{self as sim_utils, BytecodeSelection, SimCall, SimConfig, SimRunType},
 };
+use revmc_toolkit_build::OptimizationLevelDeseralizable;
+use revmc_toolkit_load::{EvmCompilerFns, RevmcExtCtx};
+use revmc_toolkit_sim::{
+    bytecode_touches,
+    sim_builder::{BlockPart, Simulation, StateProviderCacheDB},
+};
+use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
 
 // todo: sample_size and measurement_time as args
 // todo: add jit optionally
 
 impl RunConfig<PathBuf, BytecodeSelection> {
     pub fn new(
-        aot_dir_path: PathBuf, 
-        reth_db_path: PathBuf, 
-        compile_selection: BytecodeSelection
+        aot_dir_path: PathBuf,
+        reth_db_path: PathBuf,
+        compile_selection: BytecodeSelection,
     ) -> Self {
-        Self { 
-            aot_dir_path, 
-            reth_db_path, 
+        Self {
+            aot_dir_path,
+            reth_db_path,
             compile_selection,
             comp_opt_level: Default::default(),
         }
@@ -42,12 +45,8 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         info!("TxHash: {:?}", tx_hash);
 
         self.bench_variant(
-            |_provider_factory: &ProviderFactory<DatabaseEnv>| {
-                Ok(vec![tx_hash])
-            },
-            |sim_config: SimConfig<ProviderFactory<DatabaseEnv>>| {
-                sim_config.make_tx_sim(tx_hash)
-            },
+            |_provider_factory: &ProviderFactory<DatabaseEnv>| Ok(vec![tx_hash]),
+            |sim_config: SimConfig<ProviderFactory<DatabaseEnv>>| sim_config.make_tx_sim(tx_hash),
         )
     }
 
@@ -59,7 +58,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         self.bench_variant(
             |provider_factory: &ProviderFactory<DatabaseEnv>| {
                 txs_for_block(provider_factory, block_num)
-            }, 
+            },
             |sim_config: SimConfig<ProviderFactory<DatabaseEnv>>| {
                 sim_config.make_block_sim(block_num, block_chunk)
             },
@@ -75,25 +74,23 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             args,
             provider_factory,
             self.aot_dir_path.clone(),
-            &self.compile_selection
-        )?.run()
+            &self.compile_selection,
+        )?
+        .run()
     }
 
-    pub fn bench_variant<FTx, FSim>(
-        &self,
-        build_txs_fn: FTx,
-        build_sim_fn: FSim,
-    ) -> Result<()> 
+    pub fn bench_variant<FTx, FSim>(&self, build_txs_fn: FTx, build_sim_fn: FSim) -> Result<()>
     where
-        FSim: Fn(SimConfig<ProviderFactory<DatabaseEnv>>) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>>,
+        FSim: Fn(
+            SimConfig<ProviderFactory<DatabaseEnv>>,
+        ) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>>,
         FTx: Fn(&ProviderFactory<DatabaseEnv>) -> Result<Vec<B256>>,
     {
         let provider_factory = evm_utils::make_provider_factory(&self.reth_db_path)?;
         let txs = build_txs_fn(&provider_factory)?;
-        let bytecodes = self.compile_selection.bytecodes(
-            provider_factory.clone(),
-            Some(txs.clone())
-        )?;
+        let bytecodes = self
+            .compile_selection
+            .bytecodes(provider_factory.clone(), Some(txs.clone()))?;
 
         let mut criterion = Criterion::default()
             .sample_size(100)
@@ -104,12 +101,12 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             ("aot", SimRunType::AOTCompiled),
         ] {
             info!("Running {}", symbol.to_uppercase());
-    
+
             let ext_ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(self.compile_opt()))?
                 .with_touch_tracking();
             let sim_config = SimConfig::new(provider_factory.clone(), ext_ctx);
             let mut sim = build_sim_fn(sim_config)?;
-    
+
             bench_utils::check_tx_sim_validity(
                 &provider_factory,
                 &mut sim,
@@ -117,17 +114,13 @@ impl RunConfig<PathBuf, BytecodeSelection> {
                 matches!(run_type, SimRunType::Native),
             )?;
 
-            criterion.bench_function(&format!("sim_{symbol}"), |b| {
-                b.iter(|| { sim.run() })
-            });
+            criterion.bench_function(&format!("sim_{symbol}"), |b| b.iter(|| sim.run()));
         }
         Ok(())
     }
-    
 }
 
 impl<T, U> RunConfig<T, U> {
-
     pub fn bench_call(&self, call: SimCall, call_input: Bytes) -> Result<()> {
         let span = span!(Level::INFO, "bench_call");
         let _guard = span.enter();
@@ -136,36 +129,27 @@ impl<T, U> RunConfig<T, U> {
             .sample_size(100)
             .measurement_time(Duration::from_secs(5));
         let mut group = criterion.benchmark_group("call_benchmarks");
-        
+
         for (symbol, run_type) in [
             ("jit", SimRunType::JITCompiled),
             ("aot", SimRunType::AOTCompiled),
             ("native", SimRunType::Native),
         ] {
             info!("Running {}", symbol.to_uppercase());
-    
+
             let bytecode: Vec<_> = call.bytecode().original_bytes().into();
-            let ext_ctx = sim_utils::make_ext_ctx(
-                &run_type, 
-                &[bytecode], 
-                Some(self.compile_opt())
-            )?;
-            let mut sim = SimConfig::from(ext_ctx)
-                .make_call_sim(call, call_input.clone())?;
-    
-            // check_fn_validity(&mut fnc)?;
-            group.bench_function(&format!("sim_call_{symbol}"), |b| {
-                b.iter(|| { sim.run() })
-            });
+            let ext_ctx =
+                sim_utils::make_ext_ctx(&run_type, &[bytecode], Some(self.compile_opt()))?;
+            let mut sim = SimConfig::from(ext_ctx).make_call_sim(call, call_input.clone())?;
+
+            group.bench_function(format!("sim_call_{symbol}"), |b| b.iter(|| sim.run()));
         }
         group.finish();
         Ok(())
     }
-
 }
 
 impl<T> RunConfig<T, BytecodeSelection> {
-
     pub fn set_bytecode_selection_opt(&mut self, selection: Option<BytecodeSelectionCli>) {
         if let Some(selection) = selection {
             self.set_bytecode_selection(selection);
@@ -188,15 +172,17 @@ impl<T> RunConfig<T, BytecodeSelection> {
         }
         Ok(())
     }
-
 }
 
-fn txs_for_block(provider_factory: &ProviderFactory<DatabaseEnv>, block_num: u64) -> Result<Vec<B256>> {
-    let block = provider_factory.block(block_num.into())?
+fn txs_for_block(
+    provider_factory: &ProviderFactory<DatabaseEnv>,
+    block_num: u64,
+) -> Result<Vec<B256>> {
+    let block = provider_factory
+        .block(block_num.into())?
         .ok_or_eyre("Block not found")?;
     Ok(block.body.iter().map(|tx| tx.hash).collect())
 }
-
 
 #[derive(Debug, serde::Serialize)]
 enum MeasureId {
@@ -222,13 +208,13 @@ pub struct BlockRangeArgs {
     pub measurement_ms: u32,
     pub block_chunk: Option<BlockPart>,
     pub run_rnd_txs: bool,
-    pub seed: Option<[u8;32]>,
+    pub seed: Option<[u8; 32]>,
     pub comp_opt_level: OptimizationLevelDeseralizable,
 }
 
-use std::sync::Mutex;
 use csv::{Writer, WriterBuilder};
 use std::fs::{File, OpenOptions};
+use std::sync::Mutex;
 
 struct BlockRangeRunner {
     args: BlockRangeArgs,
@@ -239,20 +225,25 @@ struct BlockRangeRunner {
 }
 
 impl BlockRangeRunner {
-
     fn new(
         args: BlockRangeArgs,
         provider_factory: ProviderFactory<DatabaseEnv>,
         aot_dir_path: PathBuf,
-        bytecode_selection: &BytecodeSelection
+        bytecode_selection: &BytecodeSelection,
     ) -> Result<Self> {
         let writer = Mutex::new(Self::create_csv_writer(&args, bytecode_selection)?);
         let bytecodes = Self::bytecodes_for_range(
-            provider_factory.clone(), 
-            bytecode_selection, 
-            &args.block_iter
+            provider_factory.clone(),
+            bytecode_selection,
+            &args.block_iter,
         )?;
-        Ok(Self { args, provider_factory, aot_dir_path, writer, bytecodes })
+        Ok(Self {
+            args,
+            provider_factory,
+            aot_dir_path,
+            writer,
+            bytecodes,
+        })
     }
 
     fn run(&mut self) -> Result<()> {
@@ -261,35 +252,35 @@ impl BlockRangeRunner {
             ("aot", SimRunType::AOTCompiled),
             // ("jit", SimRunType::JITCompiled),
         ] {
-            self.process_blocks_parallel(&symbol, &run_type)?;
+            self.process_blocks_parallel(symbol, &run_type)?;
         }
 
         info!("Finished comparing block range ✨");
-        info!("The records are written to {}", self.args.out_dir_path.display());
+        info!(
+            "The records are written to {}",
+            self.args.out_dir_path.display()
+        );
         Ok(())
     }
 
     fn process_blocks_parallel(&mut self, symbol: &str, run_type: &SimRunType) -> Result<()> {
-        let compiled_fns = self.compiled_fns_for_run_type(run_type)?;     
-        self.args.block_iter.clone()
+        let compiled_fns = self.compiled_fns_for_run_type(run_type)?;
+        self.args
+            .block_iter
+            .clone()
             .into_par_iter()
             .map(|block_num| {
-                self.process_single_block(
-                    block_num, 
-                    symbol, 
-                    run_type, 
-                    compiled_fns.clone()
-                )
+                self.process_single_block(block_num, symbol, run_type, compiled_fns.clone())
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(())
     }
 
     fn process_single_block(
-        &self, 
-        block_num: u64, 
-        symbol: &str, 
-        run_type: &SimRunType, 
+        &self,
+        block_num: u64,
+        symbol: &str,
+        run_type: &SimRunType,
         compiled_fns_cache: EvmCompilerFns,
     ) -> Result<()> {
         info!("Running {} for block {block_num}", symbol.to_uppercase());
@@ -306,9 +297,9 @@ impl BlockRangeRunner {
                 warn!("Check failed for block {block_num} with: {e}");
             }
             let exe_time = bench_utils::measure_execution_time(
-                || { sim.run() }, 
-                self.args.warmup_ms, 
-                self.args.measurement_ms
+                || sim.run(),
+                self.args.warmup_ms,
+                self.args.measurement_ms,
             );
             self.write_measurement(MeasureRecord {
                 run_type: symbol.to_string(),
@@ -320,7 +311,11 @@ impl BlockRangeRunner {
         Ok(())
     }
 
-    fn create_sim_for_block(&self, block_num: u64, compiled_fns: EvmCompilerFns) -> Result<Option<(Simulation<RevmcExtCtx, StateProviderCacheDB>, MeasureId)>> {
+    fn create_sim_for_block(
+        &self,
+        block_num: u64,
+        compiled_fns: EvmCompilerFns,
+    ) -> Result<Option<(Simulation<RevmcExtCtx, StateProviderCacheDB>, MeasureId)>> {
         let sim_config = SimConfig::new(
             self.provider_factory.clone(),
             RevmcExtCtx::from(compiled_fns).with_touch_tracking(),
@@ -339,54 +334,64 @@ impl BlockRangeRunner {
         sim_config: SimConfig<ProviderFactory<DatabaseEnv>>,
         block_num: u64,
     ) -> Result<Option<(Simulation<RevmcExtCtx, StateProviderCacheDB>, MeasureId)>> {
-        let block = self.provider_factory.block(block_num.into())?
+        let block = self
+            .provider_factory
+            .block(block_num.into())?
             .ok_or_eyre("Block not found")?;
         if block.body.is_empty() {
             warn!("Found empty block {}, skipping", block_num);
             return Ok(None);
         }
-        let txs_len = self.args.block_chunk
-            .map(|chunk| {
-                match chunk {
-                    BlockPart::TOB(c) => (block.body.len() as f32 * c) as usize,
-                    BlockPart::BOB(c) => (block.body.len() as f32 * (1. - c)) as usize,
-                }
+        let txs_len = self
+            .args
+            .block_chunk
+            .map(|chunk| match chunk {
+                BlockPart::TOB(c) => (block.body.len() as f32 * c) as usize,
+                BlockPart::BOB(c) => (block.body.len() as f32 * (1. - c)) as usize,
             })
             .unwrap_or(block.body.len());
         let tx_index = rnd_utils::random_sequence(0, txs_len, 1, self.args.seed)?[0];
         let tx_hash = block.body[tx_index].hash;
         info!("Running random tx: {tx_hash:?}");
 
-        Ok(Some((sim_config.make_tx_sim(tx_hash)?, MeasureId::Tx(tx_hash))))
+        Ok(Some((
+            sim_config.make_tx_sim(tx_hash)?,
+            MeasureId::Tx(tx_hash),
+        )))
     }
 
     fn compiled_fns_for_run_type(&self, run_type: &SimRunType) -> Result<EvmCompilerFns> {
         if matches!(run_type, SimRunType::Native) {
             Ok(EvmCompilerFns::default())
         } else {
-            info!("Aquiring {} compiled fns for {run_type:?}", self.bytecodes.len());
-            sim_utils::make_compiled_fns(
-                run_type, 
-                &self.bytecodes, 
-                Some(self.compile_opt())
-            )
+            info!(
+                "Aquiring {} compiled fns for {run_type:?}",
+                self.bytecodes.len()
+            );
+            sim_utils::make_compiled_fns(run_type, &self.bytecodes, Some(self.compile_opt()))
         }
     }
 
     fn bytecodes_for_range(
         provider_factory: ProviderFactory<DatabaseEnv>,
         bytecode_selection: &BytecodeSelection,
-        block_iter: &Vec<u64>,
+        block_iter: &[u64],
     ) -> Result<Vec<Vec<u8>>> {
-        Ok(if let BytecodeSelection::GasGuzzlers { config: gconfig, size_limit } = bytecode_selection {
-            gconfig
-                .find_gas_guzzlers(provider_factory)?
-                .into_top_guzzlers(Some(*size_limit))
-        } else {
-            bytecode_touches::find_touched_bytecode_blocks(provider_factory, block_iter)?
-                .into_iter()
-                .collect::<Vec<_>>()
-        })
+        Ok(
+            if let BytecodeSelection::GasGuzzlers {
+                config: gconfig,
+                size_limit,
+            } = bytecode_selection
+            {
+                gconfig
+                    .find_gas_guzzlers(provider_factory)?
+                    .into_top_guzzlers(Some(*size_limit))
+            } else {
+                bytecode_touches::find_touched_bytecode_blocks(provider_factory, block_iter)?
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            },
+        )
     }
 
     fn write_measurement(&self, record: MeasureRecord) -> Result<()> {
@@ -397,8 +402,8 @@ impl BlockRangeRunner {
     }
 
     fn create_csv_writer(
-        args: &BlockRangeArgs, 
-        bytecode_selection: &BytecodeSelection
+        args: &BlockRangeArgs,
+        bytecode_selection: &BytecodeSelection,
     ) -> Result<Writer<File>> {
         revmc_toolkit_utils::misc::make_dir(&args.out_dir_path)?;
         let config_path = args.out_dir_path.join("config.json");
@@ -407,12 +412,11 @@ impl BlockRangeRunner {
             &serde_json::json!({
                 "args": args,
                 "bytecode_selection": bytecode_selection,
-            })
+            }),
         )?;
         let data_path = args.out_dir_path.join("data.csv");
         let file_exists = data_path.exists();
         let file = OpenOptions::new()
-            .write(true)
             .append(true)
             .create(true)
             .open(data_path)?;
@@ -427,5 +431,4 @@ impl BlockRangeRunner {
             .with_out_dir(self.aot_dir_path.clone())
             .with_opt_lvl(self.args.comp_opt_level.clone())
     }
-
 }

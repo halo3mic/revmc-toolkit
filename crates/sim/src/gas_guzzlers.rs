@@ -1,22 +1,21 @@
 // todo: track storage reads and writes to discount them from total gas used
 // todo: add option to ignore entries with big deviation from the mid block (inconsistent gas usage)
 
-use std::{collections::{HashMap, VecDeque}, ops::AddAssign};
+use crate::sim_builder::{self, StateProviderCacheDB, TxsSimBuilderExt};
 use eyre::{Ok, Result};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use reth_db::DatabaseEnv;
-use reth_provider::{
-    BlockNumReader, ProviderFactory, StateProvider,
-};
+use reth_provider::{BlockNumReader, ProviderFactory, StateProvider};
 use revm::{
     interpreter::{CallInputs, CallOutcome},
-    primitives::{Address, B256, Bytecode},
-    EvmContext, 
-    Inspector
+    primitives::{Address, Bytecode, B256},
+    EvmContext, Inspector,
 };
 use revmc_toolkit_utils as utils;
-use crate::sim_builder::{self, TxsSimBuilderExt, StateProviderCacheDB};
-
+use std::{
+    collections::{HashMap, VecDeque},
+    ops::AddAssign,
+};
 
 #[derive(Default, Debug, Clone)]
 pub struct ContractUsage {
@@ -26,7 +25,6 @@ pub struct ContractUsage {
 }
 
 impl ContractUsage {
-
     pub fn gas_used(&self) -> u64 {
         let gas_used = self.gas_used as i64 - self.gas_deficit as i64;
         if gas_used < 0 {
@@ -59,25 +57,18 @@ struct BytecodeContractUsageInspector {
 }
 
 impl BytecodeContractUsageInspector {
-    
     fn record_usage(&mut self, contract: Address, gas_used: u64) {
-        let entry = self.account_to_usage
-            .entry(contract)
-            .or_default();
+        let entry = self.account_to_usage.entry(contract).or_default();
         entry.update(gas_used);
     }
 
     fn record_gas_deficit(&mut self, caller: Address, gas_used: u64) {
-        let entry = self.account_to_usage
-            .entry(caller)
-            .or_default();
+        let entry = self.account_to_usage.entry(caller).or_default();
         entry.gas_deficit += gas_used;
     }
-
 }
 
 impl<DB: revm::Database> Inspector<DB> for BytecodeContractUsageInspector {
-
     fn call(
         &mut self,
         _context: &mut EvmContext<DB>,
@@ -110,7 +101,6 @@ impl<DB: revm::Database> Inspector<DB> for BytecodeContractUsageInspector {
 
         outcome
     }
-
 }
 
 pub struct GasGuzzlerBytecodeUsage {
@@ -119,7 +109,6 @@ pub struct GasGuzzlerBytecodeUsage {
 }
 
 impl GasGuzzlerBytecodeUsage {
-
     fn new(contract: Address, usage: ContractUsage) -> Self {
         let contracts = [(contract, usage.frequency)].into_iter().collect();
         Self { contracts, usage }
@@ -147,7 +136,7 @@ pub struct BytecodeStat<T> {
 }
 
 impl BytecodeStat<Bytecode> {
-    pub fn bytecode_to_hash(self) -> BytecodeStat<B256>  {
+    pub fn bytecode_to_hash(self) -> BytecodeStat<B256> {
         let hash = self.bytecode.hash_slow();
         BytecodeStat {
             bytecode: hash,
@@ -164,7 +153,7 @@ pub struct GasGuzzlerReport {
 impl GasGuzzlerReport {
     pub fn new(
         usage: MapWrapper<Address, ContractUsage>,
-        state_provider: &Box<dyn StateProvider>,
+        state_provider: &dyn StateProvider,
     ) -> Result<Self> {
         let mut bytecode_stats: HashMap<_, GasGuzzlerBytecodeUsage> = HashMap::new();
         let mut csum_stats = ContractUsage::default();
@@ -185,22 +174,34 @@ impl GasGuzzlerReport {
     }
 
     pub fn into_top_guzzlers_stats(self, take_size: Option<usize>) -> Vec<BytecodeStat<Bytecode>> {
-        let GasGuzzlerReport { csum_stats, bytecode_stats } = self;
+        let GasGuzzlerReport {
+            csum_stats,
+            bytecode_stats,
+        } = self;
         let take_size = take_size.unwrap_or(csum_stats.frequency() as usize);
         let mut parsed = bytecode_stats
             .into_iter()
             .map(|(bytecode, usage)| {
-                let most_used_address = usage.contracts.into_iter()
+                let most_used_address = usage
+                    .contracts
+                    .into_iter()
                     .max_by_key(|(_, freq)| *freq)
                     .map(|(addr, _)| addr);
 
                 let gas_used = usage.usage.gas_used();
                 let prop_gas_used = gas_used as f64 / csum_stats.gas_used() as f64;
-                
+
                 let frequency = usage.usage.frequency();
                 let prop_frequency = frequency as f64 / csum_stats.frequency() as f64;
 
-                (bytecode, most_used_address, gas_used, frequency, prop_gas_used, prop_frequency)
+                (
+                    bytecode,
+                    most_used_address,
+                    gas_used,
+                    frequency,
+                    prop_gas_used,
+                    prop_frequency,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -233,11 +234,14 @@ impl GasGuzzlerReport {
             .collect()
     }
 
-    fn bytecode_for_contract(contract: Address, state_provider: &Box<dyn StateProvider>) -> Result<Option<Vec<u8>>> {
-        Ok(state_provider.account_code(contract)?
+    fn bytecode_for_contract(
+        contract: Address,
+        state_provider: &dyn StateProvider,
+    ) -> Result<Option<Vec<u8>>> {
+        Ok(state_provider
+            .account_code(contract)?
             .map(|code| code.original_bytes().into()))
     }
-
 }
 
 #[derive(Default)]
@@ -253,9 +257,9 @@ impl<K, V> MapWrapper<K, V> {
 }
 
 impl<K: Eq + std::hash::Hash> MapWrapper<K, ContractUsage> {
-
     fn join(&mut self, key: K, value: ContractUsage) {
-        self.0.entry(key)
+        self.0
+            .entry(key)
             .and_modify(|e| e.merge(&value))
             .or_insert(value);
     }
@@ -265,7 +269,7 @@ impl<K: Eq + std::hash::Hash> AddAssign for MapWrapper<K, ContractUsage> {
     fn add_assign(&mut self, other: Self) {
         for (key, value) in other.0 {
             self.join(key, value);
-        }   
+        }
     }
 }
 
@@ -278,7 +282,6 @@ pub struct GasGuzzlerConfig {
 }
 
 impl GasGuzzlerConfig {
-
     pub fn with_start_block(mut self, start_block: u64) -> Self {
         self.start_block = Some(start_block);
         self
@@ -303,33 +306,35 @@ impl GasGuzzlerConfig {
         &self,
         provider_factory: ProviderFactory<DatabaseEnv>,
     ) -> Result<GasGuzzlerReport> {
-        let end_block = self.end_block.unwrap_or(provider_factory.last_block_number()?);
-        let start_block = self.start_block.unwrap_or(end_block-10_000);
-        let sample_size = self.sample_size.unwrap_or((end_block-start_block)/10);
-        let sample_iter = utils::rnd::random_sequence(start_block, end_block, sample_size as usize, self.seed)?;
-        
+        let end_block = self
+            .end_block
+            .unwrap_or(provider_factory.last_block_number()?);
+        let start_block = self.start_block.unwrap_or(end_block - 10_000);
+        let sample_size = self.sample_size.unwrap_or((end_block - start_block) / 10);
+        let sample_iter =
+            utils::rnd::random_sequence(start_block, end_block, sample_size as usize, self.seed)?;
+
         let contract_usage = sample_iter
             .into_par_iter()
             .map(|block_num| {
-                let mut sim = Self::make_sim_for_block(
-                    provider_factory.clone(), 
-                    block_num
-                )?;
+                let mut sim = Self::make_sim_for_block(provider_factory.clone(), block_num)?;
                 sim.run()?;
                 let evm = sim.into_evm();
                 Ok(MapWrapper(evm.context.external.account_to_usage))
             })
-            .reduce(|| Ok(MapWrapper::new()), |acc, item| {
-                let mut acc = acc?;
-                acc += item?;
-                Ok(acc)
-            })?;
+            .reduce(
+                || Ok(MapWrapper::new()),
+                |acc, item| {
+                    let mut acc = acc?;
+                    acc += item?;
+                    Ok(acc)
+                },
+            )?;
 
         Ok(GasGuzzlerReport::new(
-            contract_usage, 
-            &provider_factory.latest()?
+            contract_usage,
+            &provider_factory.latest()?,
         )?)
-    
     }
 
     fn make_sim_for_block(
@@ -342,5 +347,4 @@ impl GasGuzzlerConfig {
             .with_handle_register(revm::inspector_handle_register)
             .into_block_sim(block_num, None)
     }
-
 }

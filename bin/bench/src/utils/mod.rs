@@ -1,15 +1,9 @@
 pub mod bench;
 pub mod sim;
 
-
-const DEFAULT_BUILD_CONFIG: &str = "revmc.build.config.json";
-pub fn default_build_config_path() -> eyre::Result<std::path::PathBuf> {
-    Ok(std::env::current_dir()?.join(DEFAULT_BUILD_CONFIG))
-}
-
 pub fn make_dir(dir_path: &std::path::PathBuf) -> eyre::Result<()> {
     if !dir_path.exists() {
-        std::fs::create_dir_all(&dir_path)?;
+        std::fs::create_dir_all(dir_path)?;
     }
     Ok(())
 }

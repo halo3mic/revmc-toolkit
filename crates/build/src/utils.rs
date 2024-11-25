@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-
 const DEFAULT_DATA_DIR: &str = ".data/aot_compile";
 
 pub fn default_dir() -> PathBuf {
@@ -13,17 +12,18 @@ pub fn bytecode_hash_str(bytecode: &[u8]) -> String {
     revm::primitives::keccak256(bytecode).to_string()
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
 pub enum OptimizationLevelDeseralizable {
     None,
     Less,
+    #[default]
     Default,
     Aggressive,
 }
 
-impl Into<revmc::OptimizationLevel> for OptimizationLevelDeseralizable {
-    fn into(self) -> revmc::OptimizationLevel {
-        match self {
+impl From<OptimizationLevelDeseralizable> for revmc::OptimizationLevel {
+    fn from(value: OptimizationLevelDeseralizable) -> Self {
+        match value {
             OptimizationLevelDeseralizable::None => revmc::OptimizationLevel::None,
             OptimizationLevelDeseralizable::Less => revmc::OptimizationLevel::Less,
             OptimizationLevelDeseralizable::Default => revmc::OptimizationLevel::Default,
@@ -43,11 +43,5 @@ impl TryFrom<u8> for OptimizationLevelDeseralizable {
             3 => Ok(OptimizationLevelDeseralizable::Aggressive),
             _ => Err(eyre::eyre!("Invalid optimization level")),
         }
-    }
-}
-
-impl Default for OptimizationLevelDeseralizable {
-    fn default() -> Self {
-        OptimizationLevelDeseralizable::Default
     }
 }

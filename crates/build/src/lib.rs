@@ -1,17 +1,16 @@
-mod utils;
 mod compiler;
+mod utils;
 
-use std::path::Path;
-use rayon::prelude::*;
 use eyre::Result;
+use rayon::prelude::*;
+use std::path::Path;
 
-pub use compiler::{CompilerOptions, Compiler, JitCompileOut, PtrWrapper, JitCompileCtx};
+pub use compiler::{Compiler, CompilerOptions, JitCompileCtx, JitCompileOut, PtrWrapper};
 pub use utils::{default_dir, OptimizationLevelDeseralizable};
 
-
 pub fn compile_contracts_aot(
-    args: &[Vec<u8>], 
-    fallback_opt: Option<CompilerOptions>
+    args: &[Vec<u8>],
+    fallback_opt: Option<CompilerOptions>,
 ) -> Result<Vec<Result<()>>> {
     // todo: try compiling multiple contracts with the same ctx and compiler
     let opt = fallback_opt.unwrap_or_default();
@@ -21,17 +20,15 @@ pub fn compile_contracts_aot(
         .par_iter()
         .filter(|arg| !compiled_contracts.contains(&utils::bytecode_hash_str(arg)))
         .map(|arg| compiler.compile_aot(arg))
-        .collect()
-    )
+        .collect())
 }
 
 pub fn compile_contracts_jit(
-    args: &[Vec<u8>], 
-    fallback_opt: Option<CompilerOptions>
+    args: &[Vec<u8>],
+    fallback_opt: Option<CompilerOptions>,
 ) -> Result<JitCompileOut> {
     let compiler: Compiler = fallback_opt.unwrap_or_default().into();
-    args
-        .par_chunks(10) // todo: make configurable
+    args.par_chunks(10) // todo: make configurable
         .map(|chunk| compiler.compile_jit_many(chunk))
         .reduce_with(|acc, res| {
             let mut acc = acc?;
@@ -43,12 +40,13 @@ pub fn compile_contracts_jit(
 
 fn load_compiled(path: &Path) -> Result<Vec<String>> {
     let vec = std::fs::read_dir(path)?
-        .map(|res| res.map(|e| {
-            let path = e.path();
-            let file_name = path.file_name()
-                .unwrap().to_owned().into_string().unwrap();
-            file_name
-        }))
+        .map(|res| {
+            res.map(|e| {
+                let path = e.path();
+                let file_name = path.file_name().unwrap().to_owned().into_string().unwrap();
+                file_name
+            })
+        })
         .collect::<Result<Vec<_>, std::io::Error>>()?;
     Ok(vec)
 }
