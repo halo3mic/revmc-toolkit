@@ -5,7 +5,8 @@ default-members = [
     "crates/build",
     "crates/sim",
     "crates/utils",
-    "bin/gas-guzzlers"
+    "bin/gas-guzzlers",
+    "bin/bench",
 ]
 resolver = "2"
 
