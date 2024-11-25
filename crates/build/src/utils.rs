@@ -9,13 +9,6 @@ pub fn default_dir() -> PathBuf {
         .join(DEFAULT_DATA_DIR)
 }
 
-pub fn make_dir(dir_path: &PathBuf) -> eyre::Result<()> {
-    if !dir_path.exists() {
-        std::fs::create_dir_all(&dir_path)?;
-    }
-    Ok(())
-}
-
 pub fn bytecode_hash_str(bytecode: &[u8]) -> String {
     revm::primitives::keccak256(bytecode).to_string()
 }

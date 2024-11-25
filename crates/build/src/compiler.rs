@@ -89,6 +89,10 @@ impl CompilerOptions {
         self.out_dir = out_dir.into();
         self
     }
+    pub fn with_opt_lvl(mut self, opt_level: OptimizationLevelDeseralizable) -> Self {
+        self.opt_level = opt_level;
+        self
+    }
 }
 
 impl Default for CompilerOptions {
@@ -227,7 +231,7 @@ impl Compiler {
 
     fn out_dir(&self, name: &str) -> Result<PathBuf> {
         let out_dir = self.opt.out_dir.join(name);
-        utils::make_dir(&out_dir)?;
+        revmc_toolkit_utils::misc::make_dir(&out_dir)?;
         Ok(out_dir.to_path_buf())
     }
 

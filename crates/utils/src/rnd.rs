@@ -31,9 +31,13 @@ where
     
     let mut sampled_elements: Vec<T> = (start..end)
         .filter(|e| !blacklist.contains(e))
+        .collect::<Vec<T>>();
+    sampled_elements.shuffle(&mut rng);
+
+    let sampled_elements = sampled_elements
+        .into_iter()
         .take(size)
         .collect();    
-    sampled_elements.shuffle(&mut rng);
 
     Ok(sampled_elements)
 }
