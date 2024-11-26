@@ -20,7 +20,9 @@ jobs:
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: nightly
+          components: clippy, rustfmt
+          override: true
 
       - name: Run cargo fmt
         run: cargo fmt --all -- --check
