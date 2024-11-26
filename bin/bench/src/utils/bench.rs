@@ -12,10 +12,10 @@ where
     let mut warmup_iter = 0;
     loop {
         f();
+        warmup_iter += 1;
         if Instant::now() - start > warm_up_duration {
             break;
         }
-        warmup_iter += 1;
     }
 
     let measurement_iter = warmup_iter * measurement_ms / warmup_ms;

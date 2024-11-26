@@ -130,7 +130,6 @@ where
         let bytecode_hash = interpreter.contract.hash.unwrap_or_default();
         let ext_fn = context.external.get_function(bytecode_hash);
 
-        // todo: check how much overhead could this conditional add
         context.external.register_touch(
             interpreter
                 .contract

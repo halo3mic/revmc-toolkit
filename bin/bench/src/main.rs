@@ -26,7 +26,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Run(run_args) => {
-            let mut config = RunConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected);
+            let mut config = RunConfig::new(dir_path, reth_db_path, BytecodeSelection::default());
 
             match run_args {
                 RunArgsCli::Tx {
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::Bench(bench_args) => {
-            let mut config = RunConfig::new(dir_path, reth_db_path, BytecodeSelection::Selected);
+            let mut config = RunConfig::new(dir_path, reth_db_path, BytecodeSelection::default());
 
             match *bench_args {
                 BenchType::Tx {

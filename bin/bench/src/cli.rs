@@ -1,10 +1,14 @@
-use crate::{benches::BlockRangeArgs, utils, BlockPart};
+use crate::{
+    benches::BlockRangeArgs,
+    utils::{self, sim::BytecodeSelection},
+    BlockPart,
+};
 use clap::{Args, Parser, Subcommand};
 use eyre::Result;
-use revm::primitives::Bytes;
+use revm::primitives::{Bytes, B256};
 use revmc_toolkit_sim::gas_guzzlers::GasGuzzlerConfig;
 use revmc_toolkit_utils::rnd as rnd_utils;
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -85,7 +89,10 @@ pub enum RunArgsCli {
 
 #[derive(Subcommand, Debug)]
 pub enum BytecodeSelectionCli {
-    Selected,
+    Selected {
+        #[arg(long, help = "Comma-separated list of bytecode hashes to blacklist.")]
+        blacklist: Option<String>,
+    },
     GasGuzzlers(GasGuzzlersCli),
 }
 
@@ -101,6 +108,8 @@ pub struct GasGuzzlersCli {
     pub seed: Option<String>,
     #[arg(long, help = "Size limit for gas guzzlers selection.")]
     pub size_limit: usize,
+    #[arg(long, help = "Comma-separated list of bytecode hashes to blacklist.")]
+    pub blacklist: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -155,13 +164,14 @@ pub struct BlockRangeArgsCli {
     )]
     pub run_rnd_txs: bool,
     #[arg(long, help = "Comma-separated list of block numbers to blacklist.")]
-    pub blacklist: Option<String>,
+    pub blacklist_blocks: Option<String>,
     #[arg(long, help = "Compiler optimization level.")]
     pub comp_opt_level: Option<u8>,
 }
 
-impl From<GasGuzzlersCli> for (GasGuzzlerConfig, usize) {
-    fn from(cli: GasGuzzlersCli) -> (GasGuzzlerConfig, usize) {
+impl From<GasGuzzlersCli> for (GasGuzzlerConfig, usize, Vec<B256>) {
+    fn from(cli: GasGuzzlersCli) -> (GasGuzzlerConfig, usize, Vec<B256>) {
+        let blacklist = parse_bytecode_blacklist(cli.blacklist).expect("Invalid blacklist");
         (
             GasGuzzlerConfig {
                 start_block: cli.start_block,
@@ -170,8 +180,24 @@ impl From<GasGuzzlersCli> for (GasGuzzlerConfig, usize) {
                 seed: cli.seed.map(hashed),
             },
             cli.size_limit,
+            blacklist,
         )
     }
+}
+
+fn parse_bytecode_blacklist(blacklist_bytecodes: Option<String>) -> Result<Vec<B256>> {
+    let mut blacklist = Vec::new();
+    if let Some(blacklist_bytecodes) = blacklist_bytecodes {
+        for hash in blacklist_bytecodes.split(',') {
+            let hash = B256::from_str(hash);
+            if let Ok(hash) = hash {
+                blacklist.push(hash);
+            } else {
+                return Err(eyre::eyre!("Invalid hash"));
+            }
+        }
+    }
+    Ok(blacklist)
 }
 
 fn hashed<T: AsRef<str>>(seed_str: T) -> [u8; 32] {
@@ -181,7 +207,7 @@ fn hashed<T: AsRef<str>>(seed_str: T) -> [u8; 32] {
 impl BlockRangeArgsCli {
     fn block_iter(&self) -> Result<Vec<u64>> {
         let (start, end, range_size) = self.start_end_range()?;
-        let blacklist = self.parse_blacklist()?;
+        let block_blacklist = self.parse_block_blacklist()?;
         let block_iter = if let Some(sample_size) = self.sample_size {
             if sample_size > range_size {
                 return Err(eyre::eyre!("Invalid sample size"));
@@ -192,7 +218,7 @@ impl BlockRangeArgsCli {
                 end,
                 sample_size as usize,
                 seed,
-                blacklist,
+                block_blacklist,
             )?
         } else {
             (start..end).collect()
@@ -249,8 +275,8 @@ impl BlockRangeArgsCli {
         self.rnd_seed.as_ref().map(hashed)
     }
 
-    fn parse_blacklist(&self) -> Result<Vec<u64>> {
-        self.blacklist
+    fn parse_block_blacklist(&self) -> Result<Vec<u64>> {
+        self.blacklist_blocks
             .as_ref()
             .map(|blacklist| {
                 blacklist
@@ -277,5 +303,24 @@ impl TryInto<BlockRangeArgs> for BlockRangeArgsCli {
             seed: self.hashed_seed(),
             comp_opt_level: self.comp_opt_level.unwrap_or_default().try_into()?,
         })
+    }
+}
+
+impl From<BytecodeSelectionCli> for BytecodeSelection {
+    fn from(cli: BytecodeSelectionCli) -> BytecodeSelection {
+        match cli {
+            BytecodeSelectionCli::Selected { blacklist } => {
+                let blacklist = parse_bytecode_blacklist(blacklist).expect("Invalid blacklist");
+                BytecodeSelection::Selected { blacklist }
+            }
+            BytecodeSelectionCli::GasGuzzlers(cli) => {
+                let (config, size_limit, blacklist) = cli.into();
+                BytecodeSelection::GasGuzzlers {
+                    config,
+                    size_limit,
+                    blacklist,
+                }
+            }
+        }
     }
 }
