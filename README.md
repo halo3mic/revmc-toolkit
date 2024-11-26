@@ -42,3 +42,11 @@ RUST_LOG=info cargo run --release -p revmc-toolkit-bench bench block {block-numb
 RUST_LOG=info cargo run --release -p revmc-toolkit-bench block-range {start-block}..{end-block} --sample-size {sample-size}
 ```
 The results will be recorded in a file. See `--help` for more options.
+
+## Gas Guzzlers
+
+Find top bytecodes that consumed the most gas in specified block range.
+
+```bash
+cargo run --release --package gas-guzzlers --bin gas-guzzlers -- --start-block {start-block} --end-block {end-block} --sample-size {sample-size} --take {limit}
+```

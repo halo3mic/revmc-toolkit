@@ -1,0 +1,34 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  rust-check:
+    name: Rust Linting and Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: clippy, rustfmt
+          override: true
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Install LLVM
+        run: sudo .github/scripts/install_llvm_ubuntu.sh 18
+
+      - name: Run cargo clippy
+        run: cargo clippy -- -D warnings

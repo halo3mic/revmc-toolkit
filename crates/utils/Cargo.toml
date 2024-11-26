@@ -5,9 +5,6 @@ edition = "2021"
 rust-version = "1.79"
 
 [dependencies]
-revmc-toolkit-build.workspace = true
-revmc-toolkit-load.workspace = true
-
 reth-db.workspace = true
 reth-provider.workspace = true
 reth-chainspec.workspace = true

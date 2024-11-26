@@ -1,5 +1,5 @@
-mod aot_evm;
+mod evm_components;
 mod fn_loader;
 
-pub use aot_evm::*;
+pub use evm_components::*;
 pub use fn_loader::EvmCompilerFnLoader;

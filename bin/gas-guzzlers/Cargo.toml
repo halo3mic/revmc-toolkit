@@ -1,0 +1,13 @@
+[package]
+name = "gas-guzzlers"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+revmc-toolkit-sim.workspace = true
+revmc-toolkit-utils.workspace = true
+revm.workspace = true
+dotenv.workspace = true
+eyre.workspace = true
+serde_json.workspace = true
+clap = { version = "4.5.21" }

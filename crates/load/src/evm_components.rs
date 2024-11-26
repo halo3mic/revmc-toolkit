@@ -1,19 +1,13 @@
-use revm::{
-    handler::register::EvmHandler,
-    primitives::B256,
-    Database,
-};
 pub use libloading::Library;
+use revm::{handler::register::EvmHandler, primitives::B256, Database};
 pub use revmc::EvmCompilerFn;
 
+use revm::primitives::Address;
+use revmc_toolkit_build::{JitCompileCtx, JitCompileOut};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
-use revm::primitives::Address;
 
-
-// todo: rename as it is not only aot
-
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone)]
 pub struct EvmCompilerFns(pub Arc<FxHashMap<B256, (EvmCompilerFn, ReferenceDropObject)>>);
 
 impl EvmCompilerFns {
@@ -24,7 +18,8 @@ impl EvmCompilerFns {
 
 impl From<Vec<(B256, EvmCompilerFn)>> for EvmCompilerFns {
     fn from(fns: Vec<(B256, EvmCompilerFn)>) -> Self {
-        let compiled_fns = fns.into_iter()
+        let compiled_fns = fns
+            .into_iter()
             .map(|(h, f)| (h, (f, ReferenceDropObject::None)))
             .collect();
         Self(Arc::new(compiled_fns))
@@ -33,8 +28,25 @@ impl From<Vec<(B256, EvmCompilerFn)>> for EvmCompilerFns {
 
 impl From<Vec<(B256, (EvmCompilerFn, Library))>> for EvmCompilerFns {
     fn from(fns: Vec<(B256, (EvmCompilerFn, Library))>) -> Self {
-        let compiled_fns = fns.into_iter()
+        let compiled_fns = fns
+            .into_iter()
             .map(|(h, (fnc, lib))| (h, (fnc, ReferenceDropObject::Library(lib))))
+            .collect();
+        Self(Arc::new(compiled_fns))
+    }
+}
+
+impl From<JitCompileOut> for EvmCompilerFns {
+    fn from(JitCompileOut { entries, ctx }: JitCompileOut) -> Self {
+        let compiler_ctx = Arc::new(ctx);
+        let compiled_fns = entries
+            .into_iter()
+            .map(|(h, fnc)| {
+                (
+                    h,
+                    (fnc, ReferenceDropObject::CompilerCtx(compiler_ctx.clone())),
+                )
+            })
             .collect();
         Self(Arc::new(compiled_fns))
     }
@@ -43,33 +55,40 @@ impl From<Vec<(B256, (EvmCompilerFn, Library))>> for EvmCompilerFns {
 #[derive(Default, Clone)]
 pub struct RevmcExtCtx {
     compiled_fns: EvmCompilerFns,
-    pub touches: Option<Touches>
+    pub touches: Option<Touches>,
 }
 
 impl RevmcExtCtx {
-
     pub fn with_touch_tracking(mut self) -> Self {
         self.touches = Some(Touches::default());
         self
     }
-
 }
 
 impl From<Vec<(B256, EvmCompilerFn)>> for RevmcExtCtx {
     fn from(fns: Vec<(B256, EvmCompilerFn)>) -> Self {
-        Self { compiled_fns: fns.into(), touches: None }
+        Self {
+            compiled_fns: fns.into(),
+            touches: None,
+        }
     }
 }
 
 impl From<Vec<(B256, (EvmCompilerFn, Library))>> for RevmcExtCtx {
     fn from(fns: Vec<(B256, (EvmCompilerFn, Library))>) -> Self {
-        Self { compiled_fns: fns.into(), touches: None }
+        Self {
+            compiled_fns: fns.into(),
+            touches: None,
+        }
     }
 }
 
 impl From<EvmCompilerFns> for RevmcExtCtx {
     fn from(fns: EvmCompilerFns) -> Self {
-        Self { compiled_fns: fns, touches: None }
+        Self {
+            compiled_fns: fns,
+            touches: None,
+        }
     }
 }
 
@@ -84,23 +103,27 @@ impl RevmcExtCtxExtTrait for RevmcExtCtx {
         self.compiled_fns.get(&bytecode_hash).map(|f| f.0)
     }
     fn register_touch(&mut self, address: Address, non_native: bool) {
-        self.touches.as_mut().map(|t| t.register_touch(address, non_native));
+        if let Some(touches) = &mut self.touches {
+            touches.register_touch(address, non_native);
+        }
     }
     fn touches(&self) -> Option<&Touches> {
         self.touches.as_ref()
     }
 }
 
-#[derive(Debug)]
 pub enum ReferenceDropObject {
     #[allow(dead_code)]
     Library(Library),
+    CompilerCtx(Arc<JitCompileCtx>),
     None,
 }
 
-pub fn revmc_register_handler<DB, ExtCtx>(handler: &mut EvmHandler<'_, ExtCtx, DB>) 
-    where DB: Database, ExtCtx: RevmcExtCtxExtTrait
-{    
+pub fn revmc_register_handler<DB, ExtCtx>(handler: &mut EvmHandler<'_, ExtCtx, DB>)
+where
+    DB: Database,
+    ExtCtx: RevmcExtCtxExtTrait,
+{
     let execute_frame_original = handler.execution.execute_frame.clone();
     handler.execution.execute_frame = Arc::new(move |frame, memory, tables, context| {
         let interpreter = frame.interpreter_mut();
@@ -109,9 +132,11 @@ pub fn revmc_register_handler<DB, ExtCtx>(handler: &mut EvmHandler<'_, ExtCtx, D
 
         // todo: check how much overhead could this conditional add
         context.external.register_touch(
-            interpreter.contract.bytecode_address
-                .unwrap_or(interpreter.contract.target_address), 
-            ext_fn.is_some()
+            interpreter
+                .contract
+                .bytecode_address
+                .unwrap_or(interpreter.contract.target_address),
+            ext_fn.is_some(),
         );
 
         Ok(if let Some(f) = ext_fn {
@@ -126,7 +151,6 @@ pub fn revmc_register_handler<DB, ExtCtx>(handler: &mut EvmHandler<'_, ExtCtx, D
 pub struct Touches(FxHashMap<Address, TouchCounter>);
 
 impl Touches {
-
     pub fn inner(&self) -> &FxHashMap<Address, TouchCounter> {
         &self.0
     }
@@ -134,9 +158,10 @@ impl Touches {
     pub fn into_inner(self) -> FxHashMap<Address, TouchCounter> {
         self.0
     }
-    
+
     fn register_touch(&mut self, address: Address, non_native: bool) {
-        self.0.entry(address)
+        self.0
+            .entry(address)
             .and_modify(|c| c.increment(non_native))
             .or_insert(TouchCounter::new_with_increment(non_native));
     }
@@ -149,7 +174,6 @@ pub struct TouchCounter {
 }
 
 impl TouchCounter {
-
     fn new_with_increment(non_native: bool) -> Self {
         let mut counter = Self::default();
         counter.increment(non_native);

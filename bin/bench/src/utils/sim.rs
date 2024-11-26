@@ -1,30 +1,42 @@
-use revm::{primitives::{Bytecode, Bytes, B256, U256, hex, keccak256}, InMemoryDB};
-use reth_provider::ProviderFactory;
 use reth_db::DatabaseEnv;
-
-use std::{path::PathBuf, str::FromStr};
-use eyre::Result;
-
-use revmc_toolkit_sim::sim_builder::{
-    self, BlockPart, CallSimBuilderExt, Simulation, 
-    StateProviderCacheDB, TxsSimBuilderExt,
+use reth_provider::ProviderFactory;
+use revm::{
+    primitives::{hex, keccak256, Bytecode, Bytes, B256, U256},
+    InMemoryDB,
 };
-use revmc_toolkit_load::{EvmCompilerFnLoader, RevmcExtCtx, EvmCompilerFns, revmc_register_handler};
-use revmc_toolkit_utils::build as build_utils;
+
+use eyre::Result;
+use std::str::FromStr;
+
+use revmc_toolkit_build::CompilerOptions;
+use revmc_toolkit_load::{
+    revmc_register_handler, EvmCompilerFnLoader, EvmCompilerFns, RevmcExtCtx,
+};
+use revmc_toolkit_sim::sim_builder::{
+    self, BlockPart, CallSimBuilderExt, Simulation, StateProviderCacheDB, TxsSimBuilderExt,
+};
+use revmc_toolkit_sim::{bytecode_touches, gas_guzzlers::GasGuzzlerConfig};
 
 pub struct SimConfig<P> {
-    ext_ctx: RevmcExtCtx, 
+    ext_ctx: RevmcExtCtx,
     provider_factory: P,
 }
 
 impl From<RevmcExtCtx> for SimConfig<()> {
     fn from(ext_ctx: RevmcExtCtx) -> Self {
-        SimConfig { ext_ctx, provider_factory: () }
+        SimConfig {
+            ext_ctx,
+            provider_factory: (),
+        }
     }
 }
 
 impl<P> SimConfig<P> {
-    pub fn make_call_sim(&self, call_type: SimCall, input: Bytes) -> Result<Simulation<RevmcExtCtx, InMemoryDB>> {
+    pub fn make_call_sim(
+        &self,
+        call_type: SimCall,
+        input: Bytes,
+    ) -> Result<Simulation<RevmcExtCtx, InMemoryDB>> {
         let sim = sim_builder::SimulationBuilder::default()
             .with_ext_ctx(self.ext_ctx.clone())
             .with_handle_register(revmc_register_handler)
@@ -34,12 +46,17 @@ impl<P> SimConfig<P> {
 }
 
 impl SimConfig<ProviderFactory<DatabaseEnv>> {
-
     pub fn new(provider_factory: ProviderFactory<DatabaseEnv>, ext_ctx: RevmcExtCtx) -> Self {
-        Self { provider_factory, ext_ctx }
+        Self {
+            provider_factory,
+            ext_ctx,
+        }
     }
 
-    pub fn make_tx_sim(&self, tx_hash: B256) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>> {
+    pub fn make_tx_sim(
+        &self,
+        tx_hash: B256,
+    ) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>> {
         let sim = sim_builder::SimulationBuilder::default()
             .with_provider_factory(self.provider_factory.clone())
             .with_ext_ctx(self.ext_ctx.clone())
@@ -47,8 +64,12 @@ impl SimConfig<ProviderFactory<DatabaseEnv>> {
             .into_tx_sim(tx_hash)?;
         Ok(sim)
     }
-    
-    pub fn make_block_sim(&self, block_num: u64, block_part: Option<BlockPart>) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>> {
+
+    pub fn make_block_sim(
+        &self,
+        block_num: u64,
+        block_part: Option<BlockPart>,
+    ) -> Result<Simulation<RevmcExtCtx, StateProviderCacheDB>> {
         let sim = sim_builder::SimulationBuilder::default()
             .with_provider_factory(self.provider_factory.clone())
             .with_ext_ctx(self.ext_ctx.clone())
@@ -56,7 +77,6 @@ impl SimConfig<ProviderFactory<DatabaseEnv>> {
             .into_block_sim(block_num, block_part)?;
         Ok(sim)
     }
-
 }
 
 // Sim exe types
@@ -82,53 +102,49 @@ impl FromStr for SimRunType {
 }
 
 pub fn make_ext_ctx(
-    run_type: SimRunType, 
-    bytecode: Vec<Vec<u8>>, 
-    aot_dir: Option<&PathBuf>,
+    run_type: &SimRunType,
+    bytecodes: &[Vec<u8>],
+    compile_opt: Option<CompilerOptions>,
 ) -> Result<RevmcExtCtx> {
-    make_compiled_fns(run_type, bytecode, aot_dir)
-        .map(Into::into)
+    make_compiled_fns(run_type, bytecodes, compile_opt).map(Into::into)
 }
 
 pub fn make_compiled_fns(
-    run_type: SimRunType, 
-    bytecode: Vec<Vec<u8>>, 
-    aot_dir: Option<&PathBuf>,
+    run_type: &SimRunType,
+    bytecodes: &[Vec<u8>],
+    compile_opt: Option<CompilerOptions>,
 ) -> Result<EvmCompilerFns> {
     Ok(match run_type {
         SimRunType::Native => EvmCompilerFns::default(),
         SimRunType::JITCompiled => {
-            build_utils::compile_jit_from_codes(bytecode, None)?
-                .into_iter()
-                .collect::<Result<Vec<_>>>()?
-                .into()
+            revmc_toolkit_build::compile_contracts_jit(bytecodes, compile_opt)?.into()
         }
         SimRunType::AOTCompiled => {
-            let bytecode_hashes = bytecode.iter().map(|code| keccak256(&code)).collect();
-            build_utils::compile_aot_from_codes(bytecode, None)?
+            let compile_opt = compile_opt.unwrap_or_default();
+            let aot_out_dir = compile_opt.out_dir.clone();
+            let bytecode_hashes = bytecodes.iter().map(keccak256).collect();
+            revmc_toolkit_build::compile_contracts_aot(bytecodes, Some(compile_opt))?
                 .into_iter()
                 .collect::<Result<Vec<_>>>()?;
-            let aot_dir = aot_dir.ok_or_else(|| eyre::eyre!("AOT dir not provided"))?;
-            EvmCompilerFnLoader::new(aot_dir)
-                .load_selected(bytecode_hashes)?
+            EvmCompilerFnLoader::new(&aot_out_dir)
+                .load_selected(bytecode_hashes)
                 .into()
         }
     })
 }
 
-use revmc_toolkit_sim::{gas_guzzlers::GasGuzzlerConfig, bytecode_touches};
-
+#[derive(serde::Serialize)]
 pub enum BytecodeSelection {
-    Selected, 
-    GasGuzzlers { 
-        config: GasGuzzlerConfig, 
-        size_limit: usize
+    Selected,
+    GasGuzzlers {
+        config: GasGuzzlerConfig,
+        size_limit: usize,
     },
 }
 
 impl BytecodeSelection {
     pub fn bytecodes(
-        &self, 
+        &self,
         provider_factory: ProviderFactory<DatabaseEnv>,
         txs: Option<Vec<B256>>,
     ) -> Result<Vec<Vec<u8>>> {
@@ -137,24 +153,24 @@ impl BytecodeSelection {
                 let txs = txs.ok_or(eyre::eyre!("Missing transaction hashes"))?;
                 tracing::info!("Finding touched bytecode for selected txs");
                 bytecode_touches::find_touched_bytecode(provider_factory, txs)?
-                    .into_iter().collect()
+                    .into_iter()
+                    .collect()
             }
-            BytecodeSelection::GasGuzzlers { config, size_limit }  => {
+            BytecodeSelection::GasGuzzlers { config, size_limit } => {
                 tracing::info!("Finding gas guzzlers");
-                config.find_gas_guzzlers(provider_factory)?
-                    .contract_to_bytecode()?
-                    .into_top_guzzlers(*size_limit)
+                config
+                    .find_gas_guzzlers(provider_factory)?
+                    .into_top_guzzlers(Some(*size_limit))
             }
         })
     }
-    
 }
 
 // Call simulation
 
 #[derive(Clone, Copy, Debug)]
 pub enum SimCall {
-    Fibbonacci
+    Fibbonacci,
 }
 
 impl FromStr for SimCall {

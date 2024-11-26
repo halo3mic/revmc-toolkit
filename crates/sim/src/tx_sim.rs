@@ -1,26 +1,23 @@
-// use reth_rpc_types::;
-use reth_rpc_types::mev::{EthCallBundleResponse, EthCallBundleTransactionResult};
+use eyre::{OptionExt, Result};
 use reth_primitives::{transaction::FillTxEnv, TransactionSigned};
+use reth_rpc_types::mev::{EthCallBundleResponse, EthCallBundleTransactionResult};
 use revm::{
-    primitives::{FixedBytes, ResultAndState, U256}, 
-    DatabaseCommit,
-    DatabaseRef,
-    db::CacheDB, 
-    Evm, 
+    db::CacheDB,
+    primitives::{FixedBytes, ResultAndState, U256},
+    DatabaseCommit, DatabaseRef, Evm,
 };
 
-use eyre::{OptionExt, Result};
-
 // modified code from reth's EthBundle::call_bundle
-pub fn sim_txs<'a, EXT, ExtDB: DatabaseRef>(
+pub fn sim_txs<EXT, ExtDB: DatabaseRef>(
     transactions: &[TransactionSigned],
-    evm: &mut Evm<'a, EXT, CacheDB<ExtDB>>,
-) -> Result<EthCallBundleResponse> 
-where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
+    evm: &mut Evm<EXT, CacheDB<ExtDB>>,
+) -> Result<EthCallBundleResponse>
+where
+    <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static,
 {
     let coinbase = evm.block().coinbase;
     let basefee = Some(evm.block().basefee.to::<u64>());
-    
+
     let initial_coinbase = DatabaseRef::basic_ref(&evm.db(), coinbase)?
         .map(|acc| acc.balance)
         .unwrap_or_default();
@@ -31,9 +28,9 @@ where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
     let mut hash_bytes = Vec::with_capacity(32 * transactions.len());
 
     let mut results = Vec::with_capacity(transactions.len());
-    let mut transactions = transactions.into_iter().peekable();
+    let transactions = transactions.iter().peekable();
 
-    while let Some(tx) = transactions.next() {
+    for tx in transactions {
         let signer = tx.recover_signer().ok_or_eyre("Cannot recover signer")?;
 
         // todo: add validation
@@ -58,10 +55,11 @@ where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
         total_gas_fess += gas_fees;
 
         // coinbase is always present in the result state
-        coinbase_balance_after_tx =
-            state.get(&coinbase).map(|acc| acc.info.balance).unwrap_or_default();
-        let coinbase_diff =
-            coinbase_balance_after_tx.saturating_sub(coinbase_balance_before_tx);
+        coinbase_balance_after_tx = state
+            .get(&coinbase)
+            .map(|acc| acc.info.balance)
+            .unwrap_or_default();
+        let coinbase_diff = coinbase_balance_after_tx.saturating_sub(coinbase_balance_before_tx);
         let eth_sent_to_coinbase = coinbase_diff.saturating_sub(gas_fees);
 
         // update the coinbase balance
@@ -97,8 +95,9 @@ where <ExtDB as DatabaseRef>::Error: std::error::Error + Send + Sync + 'static
 
     let coinbase_diff = coinbase_balance_after_tx.saturating_sub(initial_coinbase);
     let eth_sent_to_coinbase = coinbase_diff.saturating_sub(total_gas_fess);
-    let bundle_gas_price =
-        coinbase_diff.checked_div(U256::from(total_gas_used)).unwrap_or_default();
+    let bundle_gas_price = coinbase_diff
+        .checked_div(U256::from(total_gas_used))
+        .unwrap_or_default();
     let res = EthCallBundleResponse {
         bundle_gas_price,
         bundle_hash: FixedBytes::default(),

@@ -1,13 +1,12 @@
-use std::collections::HashSet;
 use eyre::Result;
-use reth_provider::{StateProvider, ProviderFactory};
+use reth_db::DatabaseEnv;
+use reth_provider::{ProviderFactory, StateProvider};
 use revm::interpreter::{CallInputs, CallOutcome};
 use revm::primitives::{Address, Bytes, B256};
-use revm::{self, EvmContext, Inspector, Database};
-use reth_db::DatabaseEnv;
+use revm::{self, Database, EvmContext, Inspector};
+use std::collections::HashSet;
 
 use crate::sim_builder::{self, TxsSimBuilderExt};
-
 
 #[derive(Default)]
 struct BytecodeTouchInspector {
@@ -31,8 +30,29 @@ impl<DB: Database> Inspector<DB> for BytecodeTouchInspector {
     }
 }
 
+pub fn find_touched_bytecode_blocks(
+    provider_factory: ProviderFactory<DatabaseEnv>,
+    blocks: &[u64],
+) -> Result<HashSet<Vec<u8>>> {
+    let mut touched_bytecode = HashSet::new();
+    for block in blocks {
+        let mut sim = sim_builder::SimulationBuilder::default()
+            .with_provider_factory(provider_factory.clone())
+            .with_ext_ctx(BytecodeTouchInspector::default())
+            .with_handle_register(revm::inspector_handle_register)
+            .into_block_sim(*block, None)?;
+        sim.run()?;
+        let BytecodeTouchInspector { touches } = sim.into_evm().context.external;
+        let touched = contracts_to_bytecode(provider_factory.latest()?, touches)?
+            .map(|code| code.into())
+            .collect::<Vec<_>>();
+        touched_bytecode.extend(touched);
+    }
+    Ok(touched_bytecode)
+}
+
 pub fn find_touched_bytecode(
-    provider_factory: ProviderFactory<DatabaseEnv>, 
+    provider_factory: ProviderFactory<DatabaseEnv>,
     txs: Vec<B256>,
 ) -> Result<HashSet<Vec<u8>>> {
     let mut touched_bytecode = HashSet::new();
@@ -56,8 +76,8 @@ use std::collections::hash_set::IntoIter;
 use std::iter::IntoIterator;
 
 fn contracts_to_bytecode<T: IntoIterator<Item = Address>>(
-    state_provider: Box<dyn StateProvider>, 
-    contracts: T
+    state_provider: Box<dyn StateProvider>,
+    contracts: T,
 ) -> Result<IntoIter<Bytes>> {
     let mut bytecodes = HashSet::new();
     for address in contracts {
