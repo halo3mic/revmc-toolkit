@@ -25,5 +25,8 @@ jobs:
       - name: Run cargo fmt
         run: cargo fmt --all -- --check
 
+      - name: Install LLVM
+        run: sudo .github/scripts/install_llvm_ubuntu.sh 18
+
       - name: Run cargo clippy
         run: cargo clippy -- -D warnings
