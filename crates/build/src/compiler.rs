@@ -4,7 +4,7 @@ use revmc::{llvm::inkwell::context::Context, EvmCompiler, EvmCompilerFn, EvmLlvm
 use eyre::{OptionExt, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::utils::{self, OptimizationLevelDeseralizable};
 
@@ -93,8 +93,9 @@ impl CompilerOptions {
 
 impl Default for CompilerOptions {
     fn default() -> Self {
+        let default_opt = OptimizationLevelDeseralizable::Aggressive;
         Self {
-            out_dir: utils::default_dir(),
+            out_dir: utils::default_dir_for_opt(default_opt as u8),
             target: "native".to_string(),
             target_cpu: None,
             target_features: None,
@@ -103,7 +104,7 @@ impl Default for CompilerOptions {
             frame_pointers: false,
             debug_assertions: false,
             no_link: false,
-            opt_level: OptimizationLevelDeseralizable::Default,
+            opt_level: default_opt,
             spec_id: SpecId::CANCUN,
         }
     }
@@ -123,7 +124,7 @@ pub struct Compiler {
 impl Compiler {
     pub fn compile_aot(&self, bytecode: &[u8]) -> Result<()> {
         let name = utils::bytecode_hash_str(bytecode);
-        debug!("Compiling AOT contract with name {}", name);
+        info!("Compiling AOT contract with name {name} ({:?})", self.opt.opt_level);
 
         let ctx = Context::create();
         let mut compiler = self.create_compiler(&ctx, &name, true)?;

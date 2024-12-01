@@ -10,6 +10,8 @@ use revmc_toolkit_sim::gas_guzzlers::GasGuzzlerConfig;
 use revmc_toolkit_utils::rnd as rnd_utils;
 use std::{path::PathBuf, str::FromStr};
 
+// todo: For some vars use config file/envvar instead of cli args
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -32,12 +34,16 @@ pub enum BenchType {
         tx_hash: String,
         #[arg(long)]
         comp_opt_level: Option<u8>,
+        #[arg(long)]
+        aot_out_dir: Option<PathBuf>,
         #[command(subcommand)]
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Block {
         #[arg(long)]
         comp_opt_level: Option<u8>,
+        #[arg(long)]
+        aot_out_dir: Option<PathBuf>,
         #[command(flatten)]
         block_args: BlockArgsCli,
         #[command(subcommand)]
@@ -45,6 +51,8 @@ pub enum BenchType {
     },
     Call {
         comp_opt_level: Option<u8>,
+        #[arg(long)]
+        aot_out_dir: Option<PathBuf>,
     },
     BlockRange {
         #[arg(long)]
@@ -63,6 +71,8 @@ pub enum RunArgsCli {
         #[arg(long)]
         comp_opt_level: Option<u8>,
         #[arg(long)]
+        aot_out_dir: Option<PathBuf>,
+        #[arg(long)]
         run_type: String,
         #[command(subcommand)]
         bytecode_selection: Option<BytecodeSelectionCli>,
@@ -70,6 +80,8 @@ pub enum RunArgsCli {
     Block {
         #[arg(long)]
         comp_opt_level: Option<u8>,
+        #[arg(long)]
+        aot_out_dir: Option<PathBuf>,
         #[command(flatten)]
         block_args: BlockArgsCli,
         #[arg(long)]
@@ -80,6 +92,8 @@ pub enum RunArgsCli {
     Call {
         #[arg(long)]
         comp_opt_level: Option<u8>,
+        #[arg(long)]
+        aot_out_dir: Option<PathBuf>,
         #[arg(long)]
         run_type: String,
         #[arg(long)]
@@ -165,7 +179,7 @@ pub struct BlockRangeArgsCli {
     pub run_rnd_txs: bool,
     #[arg(long, help = "Comma-separated list of block numbers to blacklist.")]
     pub blacklist_blocks: Option<String>,
-    #[arg(long, help = "Compiler optimization level.")]
+    #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
     pub comp_opt_level: Option<u8>,
 }
 
@@ -301,7 +315,6 @@ impl TryInto<BlockRangeArgs> for BlockRangeArgsCli {
             out_dir_path: self.out_dir_path()?,
             run_rnd_txs: self.run_rnd_txs,
             seed: self.hashed_seed(),
-            comp_opt_level: self.comp_opt_level.unwrap_or_default().try_into()?,
         })
     }
 }

@@ -23,9 +23,9 @@ use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
 
 impl RunConfig<PathBuf, BytecodeSelection> {
     pub fn new(
-        aot_dir_path: PathBuf,
         reth_db_path: PathBuf,
         compile_selection: BytecodeSelection,
+        aot_dir_path: Option<PathBuf>,
     ) -> Self {
         Self {
             aot_dir_path,
@@ -71,6 +71,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             provider_factory,
             self.aot_dir_path.clone(),
             &self.compile_selection,
+            self.comp_opt_level.clone(),
         )?
         .run()
     }
@@ -162,6 +163,10 @@ impl<T> RunConfig<T, BytecodeSelection> {
         }
         Ok(())
     }
+
+    pub fn set_aot_out_dir(&mut self, aot_dir_path: Option<PathBuf>) {
+        self.aot_dir_path = aot_dir_path;
+    }
 }
 
 fn txs_for_block(
@@ -199,7 +204,6 @@ pub struct BlockRangeArgs {
     pub block_chunk: Option<BlockPart>,
     pub run_rnd_txs: bool,
     pub seed: Option<[u8; 32]>,
-    pub comp_opt_level: OptimizationLevelDeseralizable,
 }
 
 use csv::{Writer, WriterBuilder};
@@ -209,19 +213,21 @@ use std::sync::Mutex;
 struct BlockRangeRunner {
     args: BlockRangeArgs,
     provider_factory: ProviderFactory<DatabaseEnv>,
-    aot_dir_path: PathBuf,
+    aot_dir_path: Option<PathBuf>,
     writer: Mutex<csv::Writer<std::fs::File>>,
     bytecodes: Vec<Vec<u8>>,
+    compile_opt_lvl: OptimizationLevelDeseralizable,
 }
 
 impl BlockRangeRunner {
     fn new(
         args: BlockRangeArgs,
         provider_factory: ProviderFactory<DatabaseEnv>,
-        aot_dir_path: PathBuf,
+        aot_dir_path: Option<PathBuf>,
         bytecode_selection: &BytecodeSelection,
+        compile_opt_lvl: OptimizationLevelDeseralizable,
     ) -> Result<Self> {
-        let writer = Mutex::new(Self::create_csv_writer(&args, bytecode_selection)?);
+        let writer = Mutex::new(Self::create_csv_writer(&args, bytecode_selection, &compile_opt_lvl)?);
         let bytecodes = bytecode_selection
             .bytecodes(provider_factory.clone(), Some((&args.block_iter).into()))?;
         Ok(Self {
@@ -230,6 +236,7 @@ impl BlockRangeRunner {
             aot_dir_path,
             writer,
             bytecodes,
+            compile_opt_lvl,
         })
     }
 
@@ -361,28 +368,6 @@ impl BlockRangeRunner {
         }
     }
 
-    // fn bytecodes_for_range(
-    //     provider_factory: ProviderFactory<DatabaseEnv>,
-    //     bytecode_selection: &BytecodeSelection,
-    //     block_iter: &[u64],
-    // ) -> Result<Vec<Vec<u8>>> {
-    //     Ok(
-    //         if let BytecodeSelection::GasGuzzlers {
-    //             config: gconfig,
-    //             size_limit,
-    //         } = bytecode_selection
-    //         {
-    //             gconfig
-    //                 .find_gas_guzzlers(provider_factory)?
-    //                 .into_top_guzzlers(Some(*size_limit))
-    //         } else {
-    //             bytecode_touches::find_touched_bytecode_blocks(provider_factory, block_iter)?
-    //                 .into_iter()
-    //                 .collect::<Vec<_>>()
-    //         },
-    //     )
-    // }
-
     fn write_measurement(&self, record: MeasureRecord) -> Result<()> {
         let mut writer = self.writer.lock().unwrap();
         writer.serialize(record)?;
@@ -393,6 +378,7 @@ impl BlockRangeRunner {
     fn create_csv_writer(
         args: &BlockRangeArgs,
         bytecode_selection: &BytecodeSelection,
+        comp_opt_lvl: &OptimizationLevelDeseralizable,
     ) -> Result<Writer<File>> {
         revmc_toolkit_utils::misc::make_dir(&args.out_dir_path)?;
         let config_path = args.out_dir_path.join("config.json");
@@ -401,6 +387,7 @@ impl BlockRangeRunner {
             &serde_json::json!({
                 "args": args,
                 "bytecode_selection": bytecode_selection,
+                "compile_opt_lvl": comp_opt_lvl,
             }),
         )?;
         let data_path = args.out_dir_path.join("data.csv");
@@ -415,9 +402,12 @@ impl BlockRangeRunner {
         Ok(writer)
     }
 
+    // todo: this is repeated in Runners
     fn compile_opt(&self) -> CompilerOptions {
+        let aot_dir_out = self.aot_dir_path.clone()
+            .unwrap_or(revmc_toolkit_build::default_dir_for_opt(self.compile_opt_lvl.clone() as u8));
         CompilerOptions::default()
-            .with_out_dir(self.aot_dir_path.clone())
-            .with_opt_lvl(self.args.comp_opt_level.clone())
+            .with_out_dir(aot_dir_out)
+            .with_opt_lvl(self.compile_opt_lvl.clone())
     }
 }

@@ -105,8 +105,10 @@ impl<T, U> RunConfig<T, U> {
     }
 
     pub fn compile_opt(&self) -> CompilerOptions {
+        let aot_dir_out = self.aot_dir_path.clone()
+            .unwrap_or(revmc_toolkit_build::default_dir_for_opt(self.comp_opt_level.clone() as u8));
         CompilerOptions::default()
             .with_opt_lvl(self.comp_opt_level.clone())
-            .with_out_dir(self.aot_dir_path.clone())
+            .with_out_dir(aot_dir_out)
     }
 }

@@ -44,7 +44,7 @@ where
 }
 
 pub(crate) struct RunConfig<T, U> {
-    pub aot_dir_path: PathBuf,
+    pub aot_dir_path: Option<PathBuf>,
     pub reth_db_path: T,
     pub compile_selection: U,
     pub comp_opt_level: OptimizationLevelDeseralizable,
