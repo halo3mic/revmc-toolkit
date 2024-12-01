@@ -1,3 +1,4 @@
+# From https://github.com/paradigmxyz/revmc/blob/c3e2a3c8331032cc3875bdfce27d4247e4c7facb/.github/scripts/install_llvm_ubuntu.sh
 #!/usr/bin/env bash
 set -eo pipefail
 
