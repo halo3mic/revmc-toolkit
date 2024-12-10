@@ -240,12 +240,11 @@ impl BlockRangeRunner {
         })
     }
 
-    // we make this step parallel so that in case of a failure we get as much block matches accross different exe types as possible
     // jit is too slow to be included here
     fn run(&mut self) -> Result<()> {
         [
-            ("aot", SimRunType::AOTCompiled),
             ("native", SimRunType::Native),
+            ("aot", SimRunType::AOTCompiled),
         ]
         .into_par_iter()
         .map(|(symbol, run_type)| self.process_blocks(symbol, &run_type))

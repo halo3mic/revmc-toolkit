@@ -32,7 +32,7 @@ pub enum Commands {
 pub enum BenchType {
     Tx {
         tx_hash: String,
-        #[arg(long)]
+        #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
         comp_opt_level: Option<u8>,
         #[arg(long)]
         aot_out_dir: Option<PathBuf>,
@@ -40,7 +40,7 @@ pub enum BenchType {
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Block {
-        #[arg(long)]
+        #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
         comp_opt_level: Option<u8>,
         #[arg(long)]
         aot_out_dir: Option<PathBuf>,
@@ -50,12 +50,13 @@ pub enum BenchType {
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Call {
+        #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
         comp_opt_level: Option<u8>,
         #[arg(long)]
         aot_out_dir: Option<PathBuf>,
     },
     BlockRange {
-        #[arg(long)]
+        #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
         comp_opt_level: Option<u8>,
         #[command(flatten)]
         block_range_args: BlockRangeArgsCli,
@@ -68,7 +69,7 @@ pub enum BenchType {
 pub enum RunArgsCli {
     Tx {
         tx_hash: String,
-        #[arg(long)]
+        #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
         comp_opt_level: Option<u8>,
         #[arg(long)]
         aot_out_dir: Option<PathBuf>,
@@ -78,7 +79,7 @@ pub enum RunArgsCli {
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Block {
-        #[arg(long)]
+        #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
         comp_opt_level: Option<u8>,
         #[arg(long)]
         aot_out_dir: Option<PathBuf>,
@@ -90,7 +91,7 @@ pub enum RunArgsCli {
         bytecode_selection: Option<BytecodeSelectionCli>,
     },
     Call {
-        #[arg(long)]
+        #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
         comp_opt_level: Option<u8>,
         #[arg(long)]
         aot_out_dir: Option<PathBuf>,
@@ -179,8 +180,6 @@ pub struct BlockRangeArgsCli {
     pub run_rnd_txs: bool,
     #[arg(long, help = "Comma-separated list of block numbers to blacklist.")]
     pub blacklist_blocks: Option<String>,
-    #[arg(long, help = "Compiler optimization level. 0=None, 1=Less, 2=Default, 3=Aggressive")]
-    pub comp_opt_level: Option<u8>,
 }
 
 impl From<GasGuzzlersCli> for (GasGuzzlerConfig, usize, Vec<B256>) {
