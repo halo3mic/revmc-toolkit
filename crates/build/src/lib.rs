@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use std::path::Path;
 
 pub use compiler::{Compiler, CompilerOptions, JitCompileCtx, JitCompileOut, PtrWrapper};
-pub use utils::{default_dir, OptimizationLevelDeseralizable};
+pub use utils::{default_dir, default_dir_for_opt, OptimizationLevelDeseralizable};
 
 pub fn compile_contracts_aot(
     args: &[Vec<u8>],

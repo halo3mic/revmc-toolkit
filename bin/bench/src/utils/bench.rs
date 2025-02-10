@@ -12,10 +12,10 @@ where
     let mut warmup_iter = 0;
     loop {
         f();
+        warmup_iter += 1;
         if Instant::now() - start > warm_up_duration {
             break;
         }
-        warmup_iter += 1;
     }
 
     let measurement_iter = warmup_iter * measurement_ms / warmup_ms;
@@ -44,7 +44,7 @@ where
 }
 
 pub(crate) struct RunConfig<T, U> {
-    pub aot_dir_path: PathBuf,
+    pub aot_dir_path: Option<PathBuf>,
     pub reth_db_path: T,
     pub compile_selection: U,
     pub comp_opt_level: OptimizationLevelDeseralizable,

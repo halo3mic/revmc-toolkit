@@ -5,3 +5,5 @@
 .venv
 
 !/.data/measurements-public
+
+script.log

@@ -135,10 +135,13 @@ pub fn make_compiled_fns(
 
 #[derive(serde::Serialize)]
 pub enum BytecodeSelection {
-    Selected,
+    Selected {
+        blacklist: Vec<B256>,
+    },
     GasGuzzlers {
         config: GasGuzzlerConfig,
         size_limit: usize,
+        blacklist: Vec<B256>,
     },
 }
 
@@ -146,23 +149,72 @@ impl BytecodeSelection {
     pub fn bytecodes(
         &self,
         provider_factory: ProviderFactory<DatabaseEnv>,
-        txs: Option<Vec<B256>>,
+        med: Option<BytecodeTouchMediums>,
     ) -> Result<Vec<Vec<u8>>> {
-        Ok(match self {
-            BytecodeSelection::Selected => {
-                let txs = txs.ok_or(eyre::eyre!("Missing transaction hashes"))?;
-                tracing::info!("Finding touched bytecode for selected txs");
-                bytecode_touches::find_touched_bytecode(provider_factory, txs)?
-                    .into_iter()
-                    .collect()
+        let mut bytecodes = match self {
+            BytecodeSelection::Selected { .. } => {
+                let med = med.ok_or(eyre::eyre!("Missing hashes/blocks"))?;
+                match med {
+                    BytecodeTouchMediums::Txs(txs) => {
+                        tracing::info!("Finding touched bytecode for selected txs");
+                        bytecode_touches::find_touched_bytecode(provider_factory, txs)?
+                            .into_iter()
+                            .collect()
+                    }
+                    BytecodeTouchMediums::Blocks(blocks) => {
+                        tracing::info!("Finding touched bytecode for selected blocks");
+                        bytecode_touches::find_touched_bytecode_blocks(provider_factory, blocks)?
+                            .into_iter()
+                            .collect()
+                    }
+                }
             }
-            BytecodeSelection::GasGuzzlers { config, size_limit } => {
+            BytecodeSelection::GasGuzzlers {
+                config, size_limit, ..
+            } => {
                 tracing::info!("Finding gas guzzlers");
                 config
                     .find_gas_guzzlers(provider_factory)?
                     .into_top_guzzlers(Some(*size_limit))
             }
-        })
+        };
+        let blacklist = self.blacklist();
+        if !blacklist.is_empty() {
+            bytecodes.retain(|bc| !blacklist.contains(&keccak256(bc)));
+        }
+        Ok(bytecodes)
+    }
+
+    fn blacklist(&self) -> Vec<B256> {
+        match self {
+            BytecodeSelection::Selected { blacklist } => blacklist.clone(),
+            BytecodeSelection::GasGuzzlers { blacklist, .. } => blacklist.clone(),
+        }
+    }
+}
+
+impl Default for BytecodeSelection {
+    fn default() -> Self {
+        Self::Selected {
+            blacklist: Vec::new(),
+        }
+    }
+}
+
+pub enum BytecodeTouchMediums<'a> {
+    Txs(Vec<B256>),
+    Blocks(&'a Vec<u64>),
+}
+
+impl<'a> From<&'a Vec<u64>> for BytecodeTouchMediums<'a> {
+    fn from(v: &'a Vec<u64>) -> Self {
+        Self::Blocks(v)
+    }
+}
+
+impl<'a> From<Vec<B256>> for BytecodeTouchMediums<'a> {
+    fn from(v: Vec<B256>) -> Self {
+        Self::Txs(v)
     }
 }
 

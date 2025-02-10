@@ -1,0 +1,28 @@
+{
+  "args": {
+    "block_chunk": null,
+    "measurement_ms": 5000,
+    "run_rnd_txs": false,
+    "seed": null,
+    "warmup_ms": 3000
+  },
+  "bytecode_selection": {
+    "GasGuzzlers": {
+      "blacklist": [
+        "0xc919b535f7bbbaa57f32b602f26000e3997c22c933efbb92a36e053b20b2b4b1",
+        "0x96f2c555a4541525d77fbe720763a255ea6d306254305ed45ee28f0cde7d4fee",
+        "0x5b98f7f184bb404df45ac98096ed0e87b4383ac50753a60cf543fba5562108f5",
+        "0x48a2b70c96c5638b5603f2fa3ef3d82382c02c003ed73cf4e0ab679c2a92de2f",
+        "0xe337f15a521fa93eae7bc4fe0069ffe664adbad4df2d8a544ca38d56c35ad372"
+      ],
+      "config": {
+        "end_block": 21112000,
+        "sample_size": 6000,
+        "seed": null,
+        "start_block": 21106000
+      },
+      "size_limit": 10
+    }
+  },
+  "compile_opt_lvl": "Aggressive"
+}

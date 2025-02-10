@@ -9,17 +9,13 @@ use reth_db::DatabaseEnv;
 use reth_provider::{BlockReader, ProviderFactory};
 use revm::primitives::{Bytes, B256};
 
-use crate::cli::BytecodeSelectionCli;
 use crate::utils::{
     bench::{self as bench_utils, RunConfig},
     sim::{self as sim_utils, BytecodeSelection, SimCall, SimConfig, SimRunType},
 };
 use revmc_toolkit_build::OptimizationLevelDeseralizable;
 use revmc_toolkit_load::{EvmCompilerFns, RevmcExtCtx};
-use revmc_toolkit_sim::{
-    bytecode_touches,
-    sim_builder::{BlockPart, Simulation, StateProviderCacheDB},
-};
+use revmc_toolkit_sim::sim_builder::{BlockPart, Simulation, StateProviderCacheDB};
 use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
 
 // todo: sample_size and measurement_time as args
@@ -27,9 +23,9 @@ use revmc_toolkit_utils::{evm as evm_utils, rnd as rnd_utils};
 
 impl RunConfig<PathBuf, BytecodeSelection> {
     pub fn new(
-        aot_dir_path: PathBuf,
         reth_db_path: PathBuf,
         compile_selection: BytecodeSelection,
+        aot_dir_path: Option<PathBuf>,
     ) -> Self {
         Self {
             aot_dir_path,
@@ -75,6 +71,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             provider_factory,
             self.aot_dir_path.clone(),
             &self.compile_selection,
+            self.comp_opt_level.clone(),
         )?
         .run()
     }
@@ -90,7 +87,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
         let txs = build_txs_fn(&provider_factory)?;
         let bytecodes = self
             .compile_selection
-            .bytecodes(provider_factory.clone(), Some(txs.clone()))?;
+            .bytecodes(provider_factory.clone(), Some(txs.clone().into()))?;
 
         let mut criterion = Criterion::default()
             .sample_size(100)
@@ -150,20 +147,14 @@ impl<T, U> RunConfig<T, U> {
 }
 
 impl<T> RunConfig<T, BytecodeSelection> {
-    pub fn set_bytecode_selection_opt(&mut self, selection: Option<BytecodeSelectionCli>) {
+    pub fn set_bytecode_selection_opt<S: Into<BytecodeSelection>>(&mut self, selection: Option<S>) {
         if let Some(selection) = selection {
-            self.set_bytecode_selection(selection);
+            self.set_bytecode_selection(selection.into());
         }
     }
 
-    pub fn set_bytecode_selection(&mut self, selection: BytecodeSelectionCli) {
-        self.compile_selection = match selection {
-            BytecodeSelectionCli::Selected => BytecodeSelection::Selected,
-            BytecodeSelectionCli::GasGuzzlers(config) => {
-                let (config, size_limit) = config.into();
-                BytecodeSelection::GasGuzzlers { config, size_limit }
-            }
-        };
+    pub fn set_bytecode_selection(&mut self, selection: BytecodeSelection) {
+        self.compile_selection = selection;
     }
 
     pub fn set_compile_opt_level(&mut self, level: Option<u8>) -> Result<()> {
@@ -171,6 +162,10 @@ impl<T> RunConfig<T, BytecodeSelection> {
             self.comp_opt_level = level.try_into()?;
         }
         Ok(())
+    }
+
+    pub fn set_aot_out_dir(&mut self, aot_dir_path: Option<PathBuf>) {
+        self.aot_dir_path = aot_dir_path;
     }
 }
 
@@ -209,7 +204,6 @@ pub struct BlockRangeArgs {
     pub block_chunk: Option<BlockPart>,
     pub run_rnd_txs: bool,
     pub seed: Option<[u8; 32]>,
-    pub comp_opt_level: OptimizationLevelDeseralizable,
 }
 
 use csv::{Writer, WriterBuilder};
@@ -219,41 +213,42 @@ use std::sync::Mutex;
 struct BlockRangeRunner {
     args: BlockRangeArgs,
     provider_factory: ProviderFactory<DatabaseEnv>,
-    aot_dir_path: PathBuf,
+    aot_dir_path: Option<PathBuf>,
     writer: Mutex<csv::Writer<std::fs::File>>,
     bytecodes: Vec<Vec<u8>>,
+    compile_opt_lvl: OptimizationLevelDeseralizable,
 }
 
 impl BlockRangeRunner {
     fn new(
         args: BlockRangeArgs,
         provider_factory: ProviderFactory<DatabaseEnv>,
-        aot_dir_path: PathBuf,
+        aot_dir_path: Option<PathBuf>,
         bytecode_selection: &BytecodeSelection,
+        compile_opt_lvl: OptimizationLevelDeseralizable,
     ) -> Result<Self> {
-        let writer = Mutex::new(Self::create_csv_writer(&args, bytecode_selection)?);
-        let bytecodes = Self::bytecodes_for_range(
-            provider_factory.clone(),
-            bytecode_selection,
-            &args.block_iter,
-        )?;
+        let writer = Mutex::new(Self::create_csv_writer(&args, bytecode_selection, &compile_opt_lvl)?);
+        let bytecodes = bytecode_selection
+            .bytecodes(provider_factory.clone(), Some((&args.block_iter).into()))?;
         Ok(Self {
             args,
             provider_factory,
             aot_dir_path,
             writer,
             bytecodes,
+            compile_opt_lvl,
         })
     }
 
+    // jit is too slow to be included here
     fn run(&mut self) -> Result<()> {
-        for (symbol, run_type) in [
+        [
             ("native", SimRunType::Native),
             ("aot", SimRunType::AOTCompiled),
-            // ("jit", SimRunType::JITCompiled),
-        ] {
-            self.process_blocks_parallel(symbol, &run_type)?;
-        }
+        ]
+        .into_par_iter()
+        .map(|(symbol, run_type)| self.process_blocks(symbol, &run_type))
+        .collect::<Result<Vec<_>>>()?;
 
         info!("Finished comparing block range ✨");
         info!(
@@ -263,7 +258,7 @@ impl BlockRangeRunner {
         Ok(())
     }
 
-    fn process_blocks_parallel(&mut self, symbol: &str, run_type: &SimRunType) -> Result<()> {
+    fn process_blocks(&self, symbol: &str, run_type: &SimRunType) -> Result<()> {
         let compiled_fns = self.compiled_fns_for_run_type(run_type)?;
         self.args
             .block_iter
@@ -372,28 +367,6 @@ impl BlockRangeRunner {
         }
     }
 
-    fn bytecodes_for_range(
-        provider_factory: ProviderFactory<DatabaseEnv>,
-        bytecode_selection: &BytecodeSelection,
-        block_iter: &[u64],
-    ) -> Result<Vec<Vec<u8>>> {
-        Ok(
-            if let BytecodeSelection::GasGuzzlers {
-                config: gconfig,
-                size_limit,
-            } = bytecode_selection
-            {
-                gconfig
-                    .find_gas_guzzlers(provider_factory)?
-                    .into_top_guzzlers(Some(*size_limit))
-            } else {
-                bytecode_touches::find_touched_bytecode_blocks(provider_factory, block_iter)?
-                    .into_iter()
-                    .collect::<Vec<_>>()
-            },
-        )
-    }
-
     fn write_measurement(&self, record: MeasureRecord) -> Result<()> {
         let mut writer = self.writer.lock().unwrap();
         writer.serialize(record)?;
@@ -404,6 +377,7 @@ impl BlockRangeRunner {
     fn create_csv_writer(
         args: &BlockRangeArgs,
         bytecode_selection: &BytecodeSelection,
+        comp_opt_lvl: &OptimizationLevelDeseralizable,
     ) -> Result<Writer<File>> {
         revmc_toolkit_utils::misc::make_dir(&args.out_dir_path)?;
         let config_path = args.out_dir_path.join("config.json");
@@ -412,6 +386,7 @@ impl BlockRangeRunner {
             &serde_json::json!({
                 "args": args,
                 "bytecode_selection": bytecode_selection,
+                "compile_opt_lvl": comp_opt_lvl,
             }),
         )?;
         let data_path = args.out_dir_path.join("data.csv");
@@ -426,9 +401,12 @@ impl BlockRangeRunner {
         Ok(writer)
     }
 
+    // todo: this is repeated in Runners
     fn compile_opt(&self) -> CompilerOptions {
+        let aot_dir_out = self.aot_dir_path.clone()
+            .unwrap_or(revmc_toolkit_build::default_dir_for_opt(self.compile_opt_lvl.clone() as u8));
         CompilerOptions::default()
-            .with_out_dir(self.aot_dir_path.clone())
-            .with_opt_lvl(self.args.comp_opt_level.clone())
+            .with_out_dir(aot_dir_out)
+            .with_opt_lvl(self.compile_opt_lvl.clone())
     }
 }

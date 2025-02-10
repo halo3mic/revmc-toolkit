@@ -2,6 +2,11 @@ use std::path::PathBuf;
 
 const DEFAULT_DATA_DIR: &str = ".data/aot_compile";
 
+pub fn default_dir_for_opt(opt: u8) -> PathBuf {
+    let ddir = default_dir();
+    ddir.join(format!("opt_{}", opt))
+}
+
 pub fn default_dir() -> PathBuf {
     std::env::current_dir()
         .expect("Failed to get current directory")
@@ -12,7 +17,7 @@ pub fn bytecode_hash_str(bytecode: &[u8]) -> String {
     revm::primitives::keccak256(bytecode).to_string()
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Default)]
 pub enum OptimizationLevelDeseralizable {
     None,
     Less,

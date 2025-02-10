@@ -21,7 +21,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             SimRunType::AOTCompiled | SimRunType::JITCompiled => {
                 let bytecodes = self
                     .compile_selection
-                    .bytecodes(provider_factory.clone(), Some(vec![tx_hash]))?;
+                    .bytecodes(provider_factory.clone(), Some(vec![tx_hash].into()))?;
                 let ctx = sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(self.compile_opt()))?
                     .with_touch_tracking();
                 (ctx, false)
@@ -69,7 +69,7 @@ impl RunConfig<PathBuf, BytecodeSelection> {
             SimRunType::AOTCompiled | SimRunType::JITCompiled => {
                 let bytecodes = self
                     .compile_selection
-                    .bytecodes(provider_factory.clone(), Some(block_txs.clone()))?;
+                    .bytecodes(provider_factory.clone(), Some(block_txs.clone().into()))?;
                 sim_utils::make_ext_ctx(&run_type, &bytecodes, Some(self.compile_opt()))?
                     .with_touch_tracking()
             }
@@ -105,8 +105,10 @@ impl<T, U> RunConfig<T, U> {
     }
 
     pub fn compile_opt(&self) -> CompilerOptions {
+        let aot_dir_out = self.aot_dir_path.clone()
+            .unwrap_or(revmc_toolkit_build::default_dir_for_opt(self.comp_opt_level.clone() as u8));
         CompilerOptions::default()
             .with_opt_lvl(self.comp_opt_level.clone())
-            .with_out_dir(self.aot_dir_path.clone())
+            .with_out_dir(aot_dir_out)
     }
 }

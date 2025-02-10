@@ -1,0 +1,22 @@
+{
+  "args": {
+    "block_chunk": null,
+    "measurement_ms": 5000,
+    "run_rnd_txs": false,
+    "seed": null,
+    "warmup_ms": 3000
+  },
+  "bytecode_selection": {
+    "GasGuzzlers": {
+      "blacklist": [],
+      "config": {
+        "end_block": 20663375,
+        "sample_size": 6000,
+        "seed": null,
+        "start_block": 20657375
+      },
+      "size_limit": 100
+    }
+  },
+  "compile_opt_lvl": "Aggressive"
+}
